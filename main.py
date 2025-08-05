@@ -5,7 +5,7 @@ import logging
 import asyncio
 from typing import Dict, Any, Optional
 
-from pyrogram import Client, filters, idle
+from pyrogram import Client, filters
 from pyrogram.types import (
     Message, InlineKeyboardMarkup, InlineKeyboardButton,
     CallbackQuery, Update
@@ -32,7 +32,6 @@ API_ID = int(os.getenv("APIID", "23656977"))
 API_HASH = os.getenv("APIHASH", "49d3f43531a92b3f5bc403766313ca1e")
 WEBHOOK_URL = os.getenv("WEBHOOKURL", "https://autu2.onrender.com")
 WEBHOOK_PATH = "/webhook"
-WEBHOOK_URL_FULL = f"{WEBHOOK_URL}{WEBHOOK_PATH}"
 
 # --- تخزين البيانات ---
 user_data: Dict[int, Dict[str, Any]] = {}
@@ -51,6 +50,7 @@ STATE_SET_COUNT = "set_count"
 DATA_FILE = 'user_data.pkl'
 
 def load_data():
+    """تحميل بيانات المستخدمين من ملف."""
     global user_data
     if os.path.exists(DATA_FILE):
         try:
@@ -61,6 +61,7 @@ def load_data():
             logger.error(f"خطأ في تحميل البيانات: {e}")
 
 def save_data():
+    """حفظ بيانات المستخدمين في ملف."""
     try:
         with open(DATA_FILE, 'wb') as f:
             pickle.dump(user_data, f)
@@ -70,8 +71,9 @@ def save_data():
 
 # --- لوحات المفاتيح ---
 def main_menu_keyboard(user_id: int):
+    """إنشاء لوحة المفاتيح الرئيسية."""
     keyboard = []
-    if user_id not in user_data or not user_data.get(user_id, {}).get('logged_in'):
+    if not user_data.get(user_id, {}).get('logged_in'):
         keyboard.append([InlineKeyboardButton("🌱 1. تسجيل الدخول", callback_data='login')])
     else:
         keyboard.append([InlineKeyboardButton("📝 2. تعيين الرسالة", callback_data='set_message')])
@@ -86,6 +88,7 @@ def main_menu_keyboard(user_id: int):
     return InlineKeyboardMarkup(keyboard)
 
 def timing_keyboard():
+    """إنشاء لوحة مفاتيح لتحديد التوقيت."""
     keyboard = [
         [InlineKeyboardButton("⏱ كل 2 دقائق", callback_data='interval_120')],
         [InlineKeyboardButton("⏱ كل 5 دقائق", callback_data='interval_300')],
@@ -97,6 +100,7 @@ def timing_keyboard():
 
 # --- دوال مساعدة ---
 async def validate_user_settings(user_id: int):
+    """التحقق من اكتمال إعدادات المستخدم."""
     if user_id not in user_data:
         return False
     data = user_data[user_id]
@@ -110,6 +114,7 @@ async def validate_user_settings(user_id: int):
     return all(required)
 
 async def show_bot_status(user_id: int, bot_client: Client, chat_id: int):
+    """إرسال حالة البوت للمستخدم."""
     status = "ℹ️ حالة البوت:\n\n"
     if user_id in user_data:
         data = user_data[user_id]
@@ -125,6 +130,7 @@ async def show_bot_status(user_id: int, bot_client: Client, chat_id: int):
 
 # --- معالج النشر التلقائي ---
 async def start_autoposting(user_id: int, bot_client: Client):
+    """دالة النشر التلقائي الرئيسية."""
     data = user_data.get(user_id, {})
     chat_id = data.get('chat_id')
 
@@ -133,21 +139,21 @@ async def start_autoposting(user_id: int, bot_client: Client):
             name=f"user_{user_id}",
             api_id=API_ID,
             api_hash=API_HASH,
-            session_string=data.get('session_string', ''),
-            in_memory=True
+            session_string=data.get('session_string', '')
         )
         await user_client.start()
         await bot_client.send_message(chat_id, "🚀 بدأ النشر التلقائي...")
 
         for i in range(data.get('count', 0)):
-            if not data.get('posting', False):
+            if not user_data[user_id].get('posting', False):
+                await bot_client.send_message(chat_id, "🛑 تم إيقاف النشر بناءً على طلبك.")
                 break
             
             for group in data.get('groups', []):
                 try:
                     await user_client.send_message(group, data.get('message', ''))
                     logger.info(f"تم النشر في {group} ({i+1}/{data['count']})")
-                    await asyncio.sleep(2)
+                    await asyncio.sleep(2)  # انتظر قليلاً بين المجموعات
                 except BadRequest as e:
                     logger.error(f"خطأ في النشر: {e}")
                     await bot_client.send_message(chat_id, f"❌ خطأ في النشر في {group}: {str(e)}")
@@ -158,8 +164,9 @@ async def start_autoposting(user_id: int, bot_client: Client):
                     logger.error(f"خطأ غير متوقع: {e}")
                     await bot_client.send_message(chat_id, f"❌ خطأ غير متوقع في النشر: {str(e)}")
             
-            if i < data.get('count', 0) - 1:
+            if user_data[user_id].get('posting', False) and i < data.get('count', 0) - 1:
                 interval = data.get('interval', 300)
+                await bot_client.send_message(chat_id, f"⏱ سيتم النشر مجددًا بعد {interval//60} دقائق.")
                 await asyncio.sleep(interval)
         
         await bot_client.send_message(chat_id, "✅ تم الانتهاء من النشر!")
@@ -176,16 +183,50 @@ async def start_autoposting(user_id: int, bot_client: Client):
             user_data[user_id]['posting'] = False
         save_data()
 
-# --- إعداد عميل البوت ---
-app = Client(
+# --- إعداد عميل البوت (Pyrogram) ---
+bot_client = Client(
     name="my_bot",
     api_id=API_ID,
     api_hash=API_HASH,
-    bot_token=TOKEN,
-    in_memory=True
+    bot_token=TOKEN
 )
 
-@app.on_message(filters.command("start"))
+# --- إعداد FastAPI للويب هوك ---
+api = FastAPI()
+
+@api.on_event("startup")
+async def startup_event():
+    """حدث عند بدء تشغيل الخادم."""
+    load_data()
+    try:
+        await bot_client.start()
+        # تعيين الويب هوك باستخدام Pyrogram
+        await bot_client.set_webhook(url=f"{WEBHOOK_URL}{WEBHOOK_PATH}")
+        logger.info(f"تم تعيين الويب هوك بنجاح على {WEBHOOK_URL}{WEBHOOK_PATH}")
+    except Exception as e:
+        logger.error(f"فشل إعداد الويب هوك: {e}")
+        # هنا يمكنك اختيار إيقاف التطبيق أو الاستمرار
+        # raise RuntimeError("فشل بدء تشغيل البوت") from e
+
+@api.on_event("shutdown")
+async def shutdown_event():
+    """حدث عند إيقاف تشغيل الخادم."""
+    save_data()
+    # إزالة الويب هوك عند الإيقاف
+    await bot_client.set_webhook(url=None)
+    await bot_client.stop()
+    logger.info("إيقاف البوت...")
+
+@api.post(WEBHOOK_PATH)
+async def bot_webhook(request: Request):
+    """معالج طلبات الويب هوك الواردة."""
+    # لا تحتاج إلى Update.parse_raw، Pyrogram يتعامل مع هذا
+    data = await request.json()
+    update = Update.parse(data)
+    await bot_client.process_update(update)
+    return Response(status_code=200)
+
+@bot_client.on_message(filters.command("start"))
 async def start_command_handler(client: Client, message: Message):
     user_id = message.from_user.id
     if user_id not in user_data:
@@ -205,7 +246,7 @@ async def start_command_handler(client: Client, message: Message):
         reply_markup=main_menu_keyboard(user_id)
     )
 
-@app.on_message(filters.text & filters.private & filters.create(lambda _, __, m: user_states.get(m.from_user.id) == STATE_LOGIN_PHONE))
+@bot_client.on_message(filters.text & filters.private & filters.create(lambda _, __, m: user_states.get(m.from_user.id) == STATE_LOGIN_PHONE))
 async def handle_phone_input(client: Client, message: Message):
     user_id = message.from_user.id
     phone = re.sub(r'\s+', '', message.text.strip())
@@ -237,7 +278,7 @@ async def handle_phone_input(client: Client, message: Message):
         logger.error(f"خطأ في معالجة رقم الهاتف: {e}")
         await message.reply(f"❌ حدث خطأ غير متوقع: {str(e)}")
 
-@app.on_message(filters.text & filters.private & filters.create(lambda _, __, m: user_states.get(m.from_user.id) == STATE_LOGIN_CODE))
+@bot_client.on_message(filters.text & filters.private & filters.create(lambda _, __, m: user_states.get(m.from_user.id) == STATE_LOGIN_CODE))
 async def handle_code_input(client: Client, message: Message):
     user_id = message.from_user.id
     code = message.text.strip()
@@ -260,20 +301,22 @@ async def handle_code_input(client: Client, message: Message):
         await message.reply("✅ تم تسجيل الدخول بنجاح!")
         save_data()
         user_states.pop(user_id, None)
+        await user_client.stop()
+        temp_sessions.pop(user_id, None)
     except SessionPasswordNeeded:
         user_states[user_id] = STATE_LOGIN_PASSWORD
         await message.reply("🔐 الحساب محمي بكلمة مرور ثنائية. الرجاء إرسال كلمة المرور:")
     except (PhoneCodeInvalid, PhoneCodeExpired):
         await message.reply("❌ رمز التحقق غير صحيح أو منتهي الصلاحية.")
+        await user_client.stop()
+        temp_sessions.pop(user_id, None)
     except Exception as e:
         logger.error(f"خطأ في معالجة رمز التحقق: {e}")
         await message.reply(f"❌ فشل تسجيل الدخول: {str(e)}")
-    finally:
-        if 'client' in temp_sessions.get(user_id, {}):
-            await temp_sessions[user_id]['client'].stop()
-            temp_sessions.pop(user_id, None)
+        await user_client.stop()
+        temp_sessions.pop(user_id, None)
 
-@app.on_message(filters.text & filters.private & filters.create(lambda _, __, m: user_states.get(m.from_user.id) == STATE_LOGIN_PASSWORD))
+@bot_client.on_message(filters.text & filters.private & filters.create(lambda _, __, m: user_states.get(m.from_user.id) == STATE_LOGIN_PASSWORD))
 async def handle_password_input(client: Client, message: Message):
     user_id = message.from_user.id
     password = message.text
@@ -298,11 +341,10 @@ async def handle_password_input(client: Client, message: Message):
         await message.reply(f"❌ كلمة المرور غير صحيحة: {str(e)}")
     finally:
         user_states.pop(user_id, None)
-        if 'client' in temp_sessions.get(user_id, {}):
-            await temp_sessions[user_id]['client'].stop()
-            temp_sessions.pop(user_id, None)
+        await user_client.stop()
+        temp_sessions.pop(user_id, None)
 
-@app.on_message(filters.text & filters.private & filters.create(lambda _, __, m: user_states.get(m.from_user.id) == STATE_SET_MESSAGE))
+@bot_client.on_message(filters.text & filters.private & filters.create(lambda _, __, m: user_states.get(m.from_user.id) == STATE_SET_MESSAGE))
 async def handle_message_input(client: Client, message: Message):
     user_id = message.from_user.id
     user_data[user_id]['message'] = message.text
@@ -311,7 +353,7 @@ async def handle_message_input(client: Client, message: Message):
     user_states.pop(user_id, None)
     await message.reply("القائمة الرئيسية:", reply_markup=main_menu_keyboard(user_id))
 
-@app.on_message(filters.text & filters.private & filters.create(lambda _, __, m: user_states.get(m.from_user.id) == STATE_SET_GROUPS))
+@bot_client.on_message(filters.text & filters.private & filters.create(lambda _, __, m: user_states.get(m.from_user.id) == STATE_SET_GROUPS))
 async def handle_groups_input(client: Client, message: Message):
     user_id = message.from_user.id
     groups = message.text.split()
@@ -322,7 +364,7 @@ async def handle_groups_input(client: Client, message: Message):
     user_states.pop(user_id, None)
     await message.reply("القائمة الرئيسية:", reply_markup=main_menu_keyboard(user_id))
 
-@app.on_message(filters.text & filters.private & filters.create(lambda _, __, m: user_states.get(m.from_user.id) == STATE_SET_COUNT))
+@bot_client.on_message(filters.text & filters.private & filters.create(lambda _, __, m: user_states.get(m.from_user.id) == STATE_SET_COUNT))
 async def handle_count_input(client: Client, message: Message):
     user_id = message.from_user.id
     try:
@@ -339,7 +381,7 @@ async def handle_count_input(client: Client, message: Message):
         user_states.pop(user_id, None)
         await message.reply("القائمة الرئيسية:", reply_markup=main_menu_keyboard(user_id))
 
-@app.on_callback_query()
+@bot_client.on_callback_query()
 async def callback_handler(client: Client, query: CallbackQuery):
     user_id = query.from_user.id
     data = query.data
@@ -351,7 +393,7 @@ async def callback_handler(client: Client, query: CallbackQuery):
         user_states[user_id] = STATE_LOGIN_PHONE
         await query.message.edit_text(
             "📱 الرجاء إرسال رقم هاتفك مع رمز الدولة\n"
-            "مثال: +201234567890",
+            "مثال: `+201234567890`",
             parse_mode=ParseMode.MARKDOWN
         )
 
@@ -381,15 +423,21 @@ async def callback_handler(client: Client, query: CallbackQuery):
 
     elif data == 'start_posting':
         if await validate_user_settings(user_id):
+            if user_data[user_id].get('posting', False):
+                 await query.answer("⚠️ النشر قيد التنفيذ بالفعل!", show_alert=True)
+                 return
             user_data[user_id]['posting'] = True
             user_data[user_id]['chat_id'] = query.message.chat.id
             save_data()
             await query.answer("🚀 بدأ النشر التلقائي...", show_alert=True)
-            asyncio.create_task(start_autoposting(user_id, app))
+            asyncio.create_task(start_autoposting(user_id, client))
         else:
             await query.answer("❌ يرجى إكمال جميع إعدادات البوت أولاً", show_alert=True)
     
     elif data == 'stop_posting':
+        if not user_data[user_id].get('posting', False):
+            await query.answer("⚠️ النشر متوقف بالفعل.", show_alert=True)
+            return
         user_data[user_id]['posting'] = False
         save_data()
         await query.answer("🛑 تم إيقاف النشر التلقائي", show_alert=True)
@@ -401,38 +449,4 @@ async def callback_handler(client: Client, query: CallbackQuery):
 
     elif data == 'back_to_main':
         await query.message.edit_text("🌿 القائمة الرئيسية", reply_markup=main_menu_keyboard(user_id))
-
-
-# --- إعداد FastAPI و Pyrogram للويب هوك ---
-api = FastAPI()
-
-@api.on_event("startup")
-async def startup_event():
-    load_data()
-    
-    # تأكيد أن البوت في وضع الويب هوك
-    app.set_is_running(True)
-    
-    # تشغيل البوت مع الويب هوك
-    await app.start()
-    
-    # قم بتعيين الويب هوك بشكل يدوي باستخدام api.set_webhook()
-    await app.set_webhook(WEBHOOK_URL)
-    
-    logger.info(f"تم إعداد الويب هوك بنجاح على {WEBHOOK_URL}")
-    logger.info("البوت يعمل بنجاح!")
-
-@api.on_event("shutdown")
-async def shutdown_event():
-    save_data()
-    # تعطيل الويب هوك
-    await app.set_webhook(None)
-    await app.stop()
-    logger.info("إيقاف البوت...")
-
-@api.post(WEBHOOK_PATH)
-async def bot_webhook(request: Request):
-    update = Update.parse_raw(await request.body())
-    await app.process_update(update)
-    return Response(status_code=200)
 

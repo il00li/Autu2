@@ -1,37 +1,76 @@
 import telebot
-from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 
 BOT_TOKEN = '8373741818:AAGep7gyqdkR8xv-08XyLDNmUxRzbMUQhnY'
 bot = telebot.TeleBot(BOT_TOKEN)
 
-# بدء التشغيل
-@bot.message_handler(commands=['start'])
-def welcome(message):
-    bot.send_message(message.chat.id, "👋 أهلاً! أرسل لي كلمة لأبحث لك عن أيقونات 🧩")
+# تخزين الصور لكل مستخدم (في جلسة مؤقتة)
+user_sessions = {}
 
-# الرد على أي كلمة بحث
-@bot.message_handler(func=lambda msg: True)
-def icon_search(message):
+# مثال للبحث (صور ثابتة لغرض التوضيح)
+def fetch_images(query):
+    # يمكنك استبدال هذه الروابط بنتائج حقيقية عبر API لاحقًا
+    return [
+        f"https://dummyimage.com/600x400/000/fff&text={query}+1",
+        f"https://dummyimage.com/600x400/222/fff&text={query}+2",
+        f"https://dummyimage.com/600x400/444/fff&text={query}+3",
+    ]
+
+@bot.message_handler(commands=['start'])
+def start(message):
+    bot.send_message(message.chat.id, "👋 أرسل كلمة لأبحث لك عن أيقونات ثلاثية الأبعاد!")
+
+@bot.message_handler(func=lambda m: True)
+def handle_query(message):
     query = message.text.strip()
-    if not query:
-        bot.reply_to(message, "❗ الرجاء كتابة كلمة للبحث")
+    images = fetch_images(query)
+    if not images:
+        bot.send_message(message.chat.id, "❌ لم أجد نتائج.")
         return
 
-    # توليد رابط بحث Google Images باستخدام الكلمة
-    google_search_url = f"https://www.google.com/search?tbm=isch&q={query}+icon"
+    user_sessions[message.chat.id] = {
+        "images": images,
+        "index": 0,
+        "query": query
+    }
 
-    # إنشاء زر Inline لفتح الرابط
+    send_image(message.chat.id)
+
+def send_image(chat_id):
+    session = user_sessions[chat_id]
+    index = session["index"]
+    image_url = session["images"][index]
+
     markup = InlineKeyboardMarkup()
-    button = InlineKeyboardButton(text="🔎 عرض الأيقونات في Google", url=google_search_url)
-    markup.add(button)
+    if index > 0:
+        markup.add(InlineKeyboardButton("⬅️ السابق", callback_data="prev"))
+    if index < len(session["images"]) - 1:
+        markup.add(InlineKeyboardButton("التالي ➡️", callback_data="next"))
+    markup.add(InlineKeyboardButton("🙈 إخفاء الأزرار", callback_data="hide"))
 
-    # إرسال الرسالة مع الزر
-    bot.send_message(
-        message.chat.id,
-        f"🔍 تم إنشاء بحث لـ: *{query} icon*\nاضغط على الزر لرؤية النتائج:",
-        parse_mode="Markdown",
-        reply_markup=markup
-    )
+    bot.send_photo(chat_id, image_url, caption=f"📦 نتيجة {index + 1} من {len(session['images'])}", reply_markup=markup)
+
+@bot.callback_query_handler(func=lambda call: True)
+def handle_buttons(call: CallbackQuery):
+    session = user_sessions.get(call.message.chat.id)
+    if not session:
+        bot.answer_callback_query(call.id, "❌ لا توجد جلسة نشطة.")
+        return
+
+    if call.data == "next":
+        if session["index"] < len(session["images"]) - 1:
+            session["index"] += 1
+            bot.delete_message(call.message.chat.id, call.message.message_id)
+            send_image(call.message.chat.id)
+    elif call.data == "prev":
+        if session["index"] > 0:
+            session["index"] -= 1
+            bot.delete_message(call.message.chat.id, call.message.message_id)
+            send_image(call.message.chat.id)
+    elif call.data == "hide":
+        image_url = session["images"][session["index"]]
+        bot.delete_message(call.message.chat.id, call.message.message_id)
+        bot.send_photo(call.message.chat.id, image_url, caption="📷 تم إخفاء الأزرار.")
 
 # تشغيل البوت
 bot.infinity_polling()

@@ -6,7 +6,7 @@ import json
 # Replace with your actual bot token
 BOT_TOKEN = "7639996535:AAH_Ppw8jeiUg4nJjjEyOXaYlip289jSAio"
 # Replace with your actual Pixabay API Key
-PIXABAY_API_KEY = "51444506-bffefcaf12816bd85a20222d1"
+PIXABAY_API_KEY = "YOUR_PIXABAY_KEY"
 
 # Mandatory channels for subscription
 MANDATORY_CHANNELS = {
@@ -17,21 +17,13 @@ MANDATORY_CHANNELS = {
 bot = telebot.TeleBot(BOT_TOKEN)
 
 # Dictionary to store user session data
-# Stores the search query, current image index, image type, and search results
 user_sessions = {}
-
-# Dictionary to store the user's preferred search type
-user_search_type = {}
 
 # Inline keyboard for search types
 search_type_keyboard = types.InlineKeyboardMarkup()
 search_type_keyboard.row(
-    types.InlineKeyboardButton("الكل (All)", callback_data="type_all"),
-    types.InlineKeyboardButton("صور (Photo)", callback_data="type_photo")
-)
-search_type_keyboard.row(
-    types.InlineKeyboardButton("رسوم (Illustration)", callback_data="type_illustration"),
-    types.InlineKeyboardButton("رسوم متجهة (Vector)", callback_data="type_vector")
+    types.InlineKeyboardButton("رسوم توضيحية", callback_data="type_illustration"),
+    types.InlineKeyboardButton("رسوم متجهة", callback_data="type_vector")
 )
 
 def check_subscription(user_id):
@@ -44,7 +36,6 @@ def check_subscription(user_id):
             if member.status not in ['member', 'administrator', 'creator']:
                 return False
         except Exception as e:
-            # Handle cases where the bot is not an admin in the channel
             print(f"Error checking channel {channel_username}: {e}")
             return False
     return True
@@ -59,17 +50,9 @@ def subscription_keyboard():
     keyboard.add(types.InlineKeyboardButton(text="تحقق من الاشتراك ✅", callback_data="check_sub"))
     return keyboard
 
-def pixabay_search(query, image_type, page):
+def pixabay_search(query, image_type, page=1):
     """
     Performs a Pixabay search for images.
-    
-    Args:
-        query (str): The search query.
-        image_type (str): The type of image (all, photo, illustration, vector).
-        page (int): The page number of the search results.
-
-    Returns:
-        dict: A JSON object containing the search results, or None if an error occurs.
     """
     url = "https://pixabay.com/api/"
     params = {
@@ -77,7 +60,7 @@ def pixabay_search(query, image_type, page):
         'q': query,
         'image_type': image_type,
         'page': page,
-        'per_page': 20  # You can adjust this number
+        'per_page': 20
     }
     try:
         response = requests.get(url, params=params)
@@ -94,11 +77,9 @@ def create_navigation_keyboard(current_index, total_results):
     keyboard = types.InlineKeyboardMarkup()
     buttons = []
     
-    # 'Previous' button
     if current_index > 0:
         buttons.append(types.InlineKeyboardButton(text="◀️ السابق", callback_data="nav_prev"))
 
-    # 'Next' button
     if current_index < total_results - 1:
         buttons.append(types.InlineKeyboardButton(text="التالي ▶️", callback_data="nav_next"))
 
@@ -106,9 +87,9 @@ def create_navigation_keyboard(current_index, total_results):
     return keyboard
 
 @bot.message_handler(commands=['start'])
-def send_welcome(message):
+def send_welcome_and_ask_query(message):
     """
-    Handles the /start command.
+    Handles the /start command and prompts the user for a search query.
     """
     if not check_subscription(message.from_user.id):
         bot.send_message(
@@ -117,55 +98,18 @@ def send_welcome(message):
             reply_markup=subscription_keyboard()
         )
         return
-
-    keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    keyboard.add("بدء البحث 🎧", "نوع البحث 💐")
-    bot.send_message(
-        message.chat.id,
-        "أهلاً بك في بوت Pixabay! يمكنك الآن استخدام الأزرار أدناه.",
-        reply_markup=keyboard
-    )
-
-@bot.message_handler(func=lambda message: message.text == "نوع البحث 💐")
-def handle_search_type_command(message):
-    """
-    Handles the 'نوع البحث 💐' button, allowing the user to select the image type.
-    """
-    if not check_subscription(message.from_user.id):
-        bot.send_message(
-            message.chat.id,
-            "عذرًا، يجب عليك الاشتراك أولاً لاستخدام البوت.",
-            reply_markup=subscription_keyboard()
-        )
-        return
-
+    
     user_id = message.from_user.id
-    current_type = user_search_type.get(user_id, 'all')
-    bot.send_message(
-        message.chat.id,
-        f"النوع الحالي: {current_type.capitalize()}\nاختر نوع البحث المفضل لديك:",
-        reply_markup=search_type_keyboard
-    )
-
-@bot.message_handler(func=lambda message: message.text == "بدء البحث 🎧")
-def handle_start_search_command(message):
-    """
-    Handles the 'بدء البحث 🎧' button, prompting the user for a search query.
-    """
-    if not check_subscription(message.from_user.id):
-        bot.send_message(
-            message.chat.id,
-            "عذرًا، يجب عليك الاشتراك أولاً لاستخدام البوت.",
-            reply_markup=subscription_keyboard()
-        )
-        return
-
-    user_id = message.from_user.id
-    current_type = user_search_type.get(user_id, 'all')
+    # Default search type is 'illustration'
+    if user_id not in user_sessions:
+        user_sessions[user_id] = {'image_type': 'illustration'}
+    
     msg = bot.send_message(
         message.chat.id,
-        f"أرسل لي كلمة مفتاحية للبحث عنها. (نوع البحث: {current_type.capitalize()})"
+        "أهلاً بك في بوت الأيقونات! أرسل لي كلمة مفتاحية للبحث عنها.",
+        reply_markup=search_type_keyboard
     )
+    # Register the next step handler to process the search query
     bot.register_next_step_handler(msg, process_search_query)
 
 def process_search_query(message):
@@ -175,12 +119,23 @@ def process_search_query(message):
     chat_id = message.chat.id
     query = message.text
     user_id = message.from_user.id
-    image_type = user_search_type.get(user_id, 'all')
+    
+    # Check subscription again just in case the user left after /start
+    if not check_subscription(user_id):
+        bot.send_message(
+            chat_id,
+            "عذرًا، يجب عليك الاشتراك أولاً لاستخدام البوت.",
+            reply_markup=subscription_keyboard()
+        )
+        return
+
+    # Get the search type from the user session, default to 'illustration'
+    image_type = user_sessions.get(user_id, {}).get('image_type', 'illustration')
 
     search_results = pixabay_search(query, image_type, page=1)
 
     if not search_results or search_results['totalHits'] == 0:
-        bot.reply_to(message, "عذرًا، لم يتم العثور على أي صور لهذه الكلمة.")
+        bot.reply_to(message, "عذرًا، لم يتم العثور على أي أيقونات لهذه الكلمة. ابدأ بحثًا جديدًا باستخدام /start")
         return
 
     # Store session data
@@ -200,7 +155,7 @@ def process_search_query(message):
     bot.send_photo(
         chat_id,
         first_image['largeImageURL'],
-        caption=f"النتيجة 1 من {search_results['totalHits']}",
+        caption=f"أيقونة ({image_type.capitalize()}) - النتيجة 1 من {search_results['totalHits']}",
         reply_markup=keyboard
     )
     
@@ -210,17 +165,24 @@ def handle_type_selection(call):
     Handles inline keyboard button presses for selecting search type.
     """
     user_id = call.from_user.id
+    chat_id = call.message.chat.id
     selected_type = call.data.split('_')[1]
     
-    user_search_type[user_id] = selected_type
+    if chat_id not in user_sessions:
+        user_sessions[chat_id] = {'image_type': selected_type}
+    else:
+        user_sessions[chat_id]['image_type'] = selected_type
     
     bot.edit_message_text(
-        chat_id=call.message.chat.id,
+        chat_id=chat_id,
         message_id=call.message.message_id,
-        text=f"تم تحديد نوع البحث: {selected_type.capitalize()}",
+        text=f"تم تحديد نوع الأيقونات: {selected_type.capitalize()}.\nأرسل كلمة مفتاحية جديدة للبحث.",
         reply_markup=None
     )
     bot.answer_callback_query(call.id, text=f"تم تحديد نوع البحث إلى {selected_type.capitalize()}")
+    
+    # Register the next step handler again after type selection
+    bot.register_next_step_handler(call.message, process_search_query)
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('nav_'))
 def handle_navigation(call):
@@ -257,7 +219,7 @@ def handle_navigation(call):
             bot.edit_message_caption(
                 chat_id=chat_id,
                 message_id=call.message.message_id,
-                caption=f"النتيجة {current_index + 1} من {session['total_results']}",
+                caption=f"أيقونة ({session['image_type'].capitalize()}) - النتيجة {current_index + 1} من {session['total_results']}",
                 reply_markup=keyboard
             )
         except telebot.apihelper.ApiTelegramException as e:
@@ -276,11 +238,11 @@ def check_sub_handler(call):
     """
     if check_subscription(call.from_user.id):
         bot.delete_message(call.message.chat.id, call.message.message_id)
-        send_welcome(call.message)
+        send_welcome_and_ask_query(call.message)
     else:
         bot.answer_callback_query(call.id, "لم يتم الاشتراك في جميع القنوات بعد!")
-
 
 # Start the bot
 print("Bot is running...")
 bot.polling()
+ 

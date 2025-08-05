@@ -5,17 +5,21 @@ import logging
 import asyncio
 from typing import Dict, Any, Optional
 
-from telethon import TelegramClient, events, Button, functions
-from telethon.tl.types import User, Channel, PeerUser, PeerChannel
-from telethon.errors import (
-    SessionPasswordNeededError, PhoneCodeInvalidError, PhoneCodeExpiredError,
-    PhoneNumberInvalidError, FloodWaitError
+from pyrogram import Client, filters, idle
+from pyrogram.types import (
+    Message, InlineKeyboardMarkup, InlineKeyboardButton,
+    CallbackQuery, Update
 )
+from pyrogram.errors import (
+    SessionPasswordNeeded, PhoneCodeInvalid, PhoneCodeExpired,
+    PhoneNumberInvalid, PhoneNumberUnoccupied, BadRequest, FloodWait
+)
+from pyrogram.enums import ParseMode
 
 from fastapi import FastAPI, Request
 from starlette.responses import Response
 
-# --- تكوين السجل ---
+# تكوين السجل
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
@@ -42,7 +46,6 @@ STATE_LOGIN_PASSWORD = "login_password"
 STATE_SET_MESSAGE = "set_message"
 STATE_SET_GROUPS = "set_groups"
 STATE_SET_COUNT = "set_count"
-STATE_SET_TIMING = "set_timing"
 
 # --- تحميل وحفظ البيانات ---
 DATA_FILE = 'user_data.pkl'
@@ -67,29 +70,30 @@ def save_data():
 
 # --- لوحات المفاتيح ---
 def main_menu_keyboard(user_id: int):
-    buttons = []
+    keyboard = []
     if user_id not in user_data or not user_data.get(user_id, {}).get('logged_in'):
-        buttons.append([Button.inline("🌱 1. تسجيل الدخول", b'login')])
+        keyboard.append([InlineKeyboardButton("🌱 1. تسجيل الدخول", callback_data='login')])
     else:
-        buttons.append([Button.inline("📝 2. تعيين الرسالة", b'set_message')])
-        buttons.append([Button.inline("🌿 3. تعيين المجموعات", b'set_groups')])
-        buttons.append([Button.inline("🍀 4. تعيين العدد", b'set_count')])
-        buttons.append([Button.inline("⏱ 5. ضبط التوقيت", b'set_interval')])
-        buttons.append([
-            Button.inline("🚀 بدء النشر", b'start_posting'),
-            Button.inline("🛑 إيقاف النشر", b'stop_posting')
+        keyboard.append([InlineKeyboardButton("📝 2. تعيين الرسالة", callback_data='set_message')])
+        keyboard.append([InlineKeyboardButton("🌿 3. تعيين المجموعات", callback_data='set_groups')])
+        keyboard.append([InlineKeyboardButton("🍀 4. تعيين العدد", callback_data='set_count')])
+        keyboard.append([InlineKeyboardButton("⏱ 5. ضبط التوقيت", callback_data='set_interval')])
+        keyboard.append([
+            InlineKeyboardButton("🚀 بدء النشر", callback_data='start_posting'),
+            InlineKeyboardButton("🛑 إيقاف النشر", callback_data='stop_posting')
         ])
-    buttons.append([Button.inline("ℹ️ حالة البوت", b'bot_status')])
-    return buttons
+    keyboard.append([InlineKeyboardButton("ℹ️ حالة البوت", callback_data='bot_status')])
+    return InlineKeyboardMarkup(keyboard)
 
 def timing_keyboard():
-    return [
-        [Button.inline("⏱ كل 2 دقائق", b'interval_120')],
-        [Button.inline("⏱ كل 5 دقائق", b'interval_300')],
-        [Button.inline("⏱ كل 10 دقائق", b'interval_600')],
-        [Button.inline("⏱ كل 15 دقائق", b'interval_900')],
-        [Button.inline("🔙 رجوع", b'back_to_main')]
+    keyboard = [
+        [InlineKeyboardButton("⏱ كل 2 دقائق", callback_data='interval_120')],
+        [InlineKeyboardButton("⏱ كل 5 دقائق", callback_data='interval_300')],
+        [InlineKeyboardButton("⏱ كل 10 دقائق", callback_data='interval_600')],
+        [InlineKeyboardButton("⏱ كل 15 دقائق", callback_data='interval_900')],
+        [InlineKeyboardButton("🔙 رجوع", callback_data='back_to_main')]
     ]
+    return InlineKeyboardMarkup(keyboard)
 
 # --- دوال مساعدة ---
 async def validate_user_settings(user_id: int):
@@ -105,7 +109,7 @@ async def validate_user_settings(user_id: int):
     ]
     return all(required)
 
-async def show_bot_status(user_id: int, bot_client: TelegramClient, chat_id: int):
+async def show_bot_status(user_id: int, bot_client: Client, chat_id: int):
     status = "ℹ️ حالة البوت:\n\n"
     if user_id in user_data:
         data = user_data[user_id]
@@ -117,21 +121,22 @@ async def show_bot_status(user_id: int, bot_client: TelegramClient, chat_id: int
         status += f"🚀 النشر: {'✅ نشط' if data.get('posting', False) else '❌ غير نشط'}\n"
     else:
         status += "❌ لم يتم إعداد البوت بعد"
-    
     await bot_client.send_message(chat_id, status)
 
 # --- معالج النشر التلقائي ---
-async def start_autoposting(user_id: int, bot_client: TelegramClient):
+async def start_autoposting(user_id: int, bot_client: Client):
     data = user_data.get(user_id, {})
     chat_id = data.get('chat_id')
 
     try:
-        user_client = TelegramClient(
-            f"user_{user_id}",
-            API_ID,
-            API_HASH
+        user_client = Client(
+            name=f"user_{user_id}",
+            api_id=API_ID,
+            api_hash=API_HASH,
+            session_string=data.get('session_string', ''),
+            in_memory=True
         )
-        await user_client.start(bot_token=None, phone=lambda: data['phone_for_session'], password=lambda: None)
+        await user_client.start()
         await bot_client.send_message(chat_id, "🚀 بدأ النشر التلقائي...")
 
         for i in range(data.get('count', 0)):
@@ -142,10 +147,13 @@ async def start_autoposting(user_id: int, bot_client: TelegramClient):
                 try:
                     await user_client.send_message(group, data.get('message', ''))
                     logger.info(f"تم النشر في {group} ({i+1}/{data['count']})")
-                    await asyncio.sleep(2)  # تأخير بين المجموعات
-                except FloodWaitError as e:
-                    logger.warning(f"تم حظر الطلب مؤقتًا: انتظر {e.seconds} ثواني")
-                    await asyncio.sleep(e.seconds)
+                    await asyncio.sleep(2)
+                except BadRequest as e:
+                    logger.error(f"خطأ في النشر: {e}")
+                    await bot_client.send_message(chat_id, f"❌ خطأ في النشر في {group}: {str(e)}")
+                except FloodWait as e:
+                    logger.warning(f"تم حظر الطلب مؤقتًا: انتظر {e.value} ثواني")
+                    await asyncio.sleep(e.value)
                 except Exception as e:
                     logger.error(f"خطأ غير متوقع: {e}")
                     await bot_client.send_message(chat_id, f"❌ خطأ غير متوقع في النشر: {str(e)}")
@@ -161,7 +169,7 @@ async def start_autoposting(user_id: int, bot_client: TelegramClient):
         await bot_client.send_message(chat_id, f"❌ حدث خطأ في النشر: {str(e)}")
     finally:
         try:
-            await user_client.disconnect()
+            await user_client.stop()
         except:
             pass
         if user_id in user_data:
@@ -169,23 +177,23 @@ async def start_autoposting(user_id: int, bot_client: TelegramClient):
         save_data()
 
 # --- إعداد عميل البوت ---
-app = TelegramClient(
-    'bot_session',
-    API_ID,
-    API_HASH
-).start(bot_token=TOKEN)
+app = Client(
+    name="my_bot",
+    api_id=API_ID,
+    api_hash=API_HASH,
+    bot_token=TOKEN,
+    in_memory=True
+)
 
-# --- معالجات الرسائل والأوامر ---
-@app.on(events.NewMessage(pattern='/start'))
-async def start_command_handler(event):
-    user_id = event.sender_id
+@app.on_message(filters.command("start"))
+async def start_command_handler(client: Client, message: Message):
+    user_id = message.from_user.id
     if user_id not in user_data:
         user_data[user_id] = {
             'logged_in': False, 'posting': False, 'groups': [],
-            'count': 0, 'interval': 300, 'message': '', 'chat_id': event.chat_id,
-            'phone_for_session': ''
+            'count': 0, 'interval': 300, 'message': '', 'chat_id': message.chat.id
         }
-    await event.reply(
+    await message.reply(
         "👋 مرحبًا بك في بوت النشر التلقائي المتقدم!\n\n"
         "🌿 يرجى اتباع الخطوات بالترتيب:\n"
         "1. تسجيل الدخول بحسابك\n"
@@ -194,47 +202,48 @@ async def start_command_handler(event):
         "4. تعيين عدد المرات\n"
         "5. ضبط توقيت النشر\n\n"
         "استخدم الأزرار أدناه للبدء:",
-        buttons=main_menu_keyboard(user_id)
+        reply_markup=main_menu_keyboard(user_id)
     )
 
-@app.on(events.NewMessage(func=lambda e: user_states.get(e.sender_id) == STATE_LOGIN_PHONE))
-async def handle_phone_input(event):
-    user_id = event.sender_id
-    phone = re.sub(r'\s+', '', event.message.message.strip())
+@app.on_message(filters.text & filters.private & filters.create(lambda _, __, m: user_states.get(m.from_user.id) == STATE_LOGIN_PHONE))
+async def handle_phone_input(client: Client, message: Message):
+    user_id = message.from_user.id
+    phone = re.sub(r'\s+', '', message.text.strip())
     
     if not re.match(r'^\+\d{10,15}$', phone):
-        await event.reply("❌ رقم الهاتف غير صحيح. مثال صحيح: +967734763250")
+        await message.reply("❌ رقم الهاتف غير صحيح. مثال صحيح: +967734763250")
         return
     
     try:
-        user_client = TelegramClient(f"user_{user_id}", API_ID, API_HASH)
+        user_client = Client(f"user_{user_id}", API_ID, API_HASH, in_memory=True)
         await user_client.connect()
-        sent_code = await user_client.send_code_request(phone)
+        sent_code = await user_client.send_code(phone)
         
         temp_sessions[user_id] = {
             'client': user_client,
             'phone': phone,
-            'sent_code': sent_code
+            'phone_code_hash': sent_code.phone_code_hash
         }
         
         user_states[user_id] = STATE_LOGIN_CODE
-        await event.reply("🔢 تم إرسال رمز التحقق إليك. الرجاء إرسال الرمز:")
-    except PhoneNumberInvalidError:
-        await event.reply("❌ رقم الهاتف غير صالح. الرجاء التحقق وإعادة المحاولة.")
-    except FloodWaitError as e:
-        await event.reply(f"⏳ تم حظر الطلب مؤقتًا. الرجاء الانتظار {e.seconds} ثواني.")
+        await message.reply("🔢 تم إرسال رمز التحقق إليك. الرجاء إرسال الرمز:")
+    except PhoneNumberInvalid:
+        await message.reply("❌ رقم الهاتف غير صالح. الرجاء التحقق وإعادة المحاولة.")
+    except PhoneNumberUnoccupied:
+        await message.reply("❌ رقم الهاتف غير مسجل في Telegram.")
+    except FloodWait as e:
+        await message.reply(f"⏳ تم حظر الطلب مؤقتًا. الرجاء الانتظار {e.value} ثواني.")
     except Exception as e:
         logger.error(f"خطأ في معالجة رقم الهاتف: {e}")
-        await event.reply(f"❌ حدث خطأ غير متوقع: {str(e)}")
-        user_states.pop(user_id, None)
+        await message.reply(f"❌ حدث خطأ غير متوقع: {str(e)}")
 
-@app.on(events.NewMessage(func=lambda e: user_states.get(e.sender_id) == STATE_LOGIN_CODE))
-async def handle_code_input(event):
-    user_id = event.sender_id
-    code = event.message.message.strip()
+@app.on_message(filters.text & filters.private & filters.create(lambda _, __, m: user_states.get(m.from_user.id) == STATE_LOGIN_CODE))
+async def handle_code_input(client: Client, message: Message):
+    user_id = message.from_user.id
+    code = message.text.strip()
     
     if user_id not in temp_sessions:
-        await event.reply("❌ انتهت الجلسة. الرجاء البدء من جديد.")
+        await message.reply("❌ انتهت الجلسة. الرجاء البدء من جديد.")
         user_states.pop(user_id, None)
         return
     
@@ -242,152 +251,156 @@ async def handle_code_input(event):
     user_client = session['client']
     
     try:
-        await user_client.sign_in(session['phone'], code=code, password=None, phone_code_hash=session['sent_code'].phone_code_hash)
-        
+        await user_client.sign_in(session['phone'], session['phone_code_hash'], code)
+        session_string = await user_client.export_session_string()
         user_data[user_id].update({
+            'session_string': session_string,
             'logged_in': True,
-            'phone_for_session': session['phone']
         })
-        await event.reply("✅ تم تسجيل الدخول بنجاح!")
+        await message.reply("✅ تم تسجيل الدخول بنجاح!")
         save_data()
         user_states.pop(user_id, None)
-    except SessionPasswordNeededError:
+    except SessionPasswordNeeded:
         user_states[user_id] = STATE_LOGIN_PASSWORD
-        await event.reply("🔐 الحساب محمي بكلمة مرور ثنائية. الرجاء إرسال كلمة المرور:")
-    except (PhoneCodeInvalidError, PhoneCodeExpiredError):
-        await event.reply("❌ رمز التحقق غير صحيح أو منتهي الصلاحية.")
+        await message.reply("🔐 الحساب محمي بكلمة مرور ثنائية. الرجاء إرسال كلمة المرور:")
+    except (PhoneCodeInvalid, PhoneCodeExpired):
+        await message.reply("❌ رمز التحقق غير صحيح أو منتهي الصلاحية.")
     except Exception as e:
         logger.error(f"خطأ في معالجة رمز التحقق: {e}")
-        await event.reply(f"❌ فشل تسجيل الدخول: {str(e)}")
+        await message.reply(f"❌ فشل تسجيل الدخول: {str(e)}")
     finally:
-        if 'client' in temp_sessions[user_id]:
-            await temp_sessions[user_id]['client'].disconnect()
+        if 'client' in temp_sessions.get(user_id, {}):
+            await temp_sessions[user_id]['client'].stop()
             temp_sessions.pop(user_id, None)
-        
-@app.on(events.NewMessage(func=lambda e: user_states.get(e.sender_id) == STATE_LOGIN_PASSWORD))
-async def handle_password_input(event):
-    user_id = event.sender_id
-    password = event.message.message
+
+@app.on_message(filters.text & filters.private & filters.create(lambda _, __, m: user_states.get(m.from_user.id) == STATE_LOGIN_PASSWORD))
+async def handle_password_input(client: Client, message: Message):
+    user_id = message.from_user.id
+    password = message.text
     
     if user_id not in temp_sessions:
-        await event.reply("❌ انتهت الجلسة. الرجاء البدء من جديد.")
+        await message.reply("❌ انتهت الجلسة. الرجاء البدء من جديد.")
         user_states.pop(user_id, None)
         return
     
     user_client = temp_sessions[user_id]['client']
     try:
-        await user_client.sign_in(password=password)
-        
+        await user_client.check_password(password=password)
+        session_string = await user_client.export_session_string()
         user_data[user_id].update({
+            'session_string': session_string,
             'logged_in': True,
-            'phone_for_session': temp_sessions[user_id]['phone']
         })
-        await event.reply("✅ تم تسجيل الدخول بنجاح!")
+        await message.reply("✅ تم تسجيل الدخول بنجاح!")
         save_data()
     except Exception as e:
         logger.error(f"خطأ في معالجة كلمة المرور: {e}")
-        await event.reply(f"❌ كلمة المرور غير صحيحة: {str(e)}")
+        await message.reply(f"❌ كلمة المرور غير صحيحة: {str(e)}")
     finally:
         user_states.pop(user_id, None)
-        if 'client' in temp_sessions[user_id]:
-            await temp_sessions[user_id]['client'].disconnect()
+        if 'client' in temp_sessions.get(user_id, {}):
+            await temp_sessions[user_id]['client'].stop()
             temp_sessions.pop(user_id, None)
 
-@app.on(events.NewMessage(func=lambda e: user_states.get(e.sender_id) == STATE_SET_MESSAGE))
-async def handle_message_input(event):
-    user_id = event.sender_id
-    user_data[user_id]['message'] = event.message.message
-    await event.reply("✅ تم حفظ الرسالة بنجاح!")
+@app.on_message(filters.text & filters.private & filters.create(lambda _, __, m: user_states.get(m.from_user.id) == STATE_SET_MESSAGE))
+async def handle_message_input(client: Client, message: Message):
+    user_id = message.from_user.id
+    user_data[user_id]['message'] = message.text
+    await message.reply("✅ تم حفظ الرسالة بنجاح!")
     save_data()
     user_states.pop(user_id, None)
-    await event.reply("القائمة الرئيسية:", buttons=main_menu_keyboard(user_id))
+    await message.reply("القائمة الرئيسية:", reply_markup=main_menu_keyboard(user_id))
 
-@app.on(events.NewMessage(func=lambda e: user_states.get(e.sender_id) == STATE_SET_GROUPS))
-async def handle_groups_input(event):
-    user_id = event.sender_id
-    groups = event.message.message.split()
+@app.on_message(filters.text & filters.private & filters.create(lambda _, __, m: user_states.get(m.from_user.id) == STATE_SET_GROUPS))
+async def handle_groups_input(client: Client, message: Message):
+    user_id = message.from_user.id
+    groups = message.text.split()
     
     user_data[user_id]['groups'] = groups
-    await event.reply(f"✅ تم حفظ {len(groups)} مجموعة بنجاح!")
+    await message.reply(f"✅ تم حفظ {len(groups)} مجموعة بنجاح!")
     save_data()
     user_states.pop(user_id, None)
-    await event.reply("القائمة الرئيسية:", buttons=main_menu_keyboard(user_id))
+    await message.reply("القائمة الرئيسية:", reply_markup=main_menu_keyboard(user_id))
 
-@app.on(events.NewMessage(func=lambda e: user_states.get(e.sender_id) == STATE_SET_COUNT))
-async def handle_count_input(event):
-    user_id = event.sender_id
+@app.on_message(filters.text & filters.private & filters.create(lambda _, __, m: user_states.get(m.from_user.id) == STATE_SET_COUNT))
+async def handle_count_input(client: Client, message: Message):
+    user_id = message.from_user.id
     try:
-        count = int(event.message.message)
+        count = int(message.text)
         if count <= 0:
             raise ValueError
         
         user_data[user_id]['count'] = count
-        await event.reply(f"✅ تم تعيين عدد النشرات إلى {count}!")
+        await message.reply(f"✅ تم تعيين عدد النشرات إلى {count}!")
         save_data()
     except ValueError:
-        await event.reply("❌ الرجاء إدخال عدد صحيح موجب.")
+        await message.reply("❌ الرجاء إدخال عدد صحيح موجب.")
     finally:
         user_states.pop(user_id, None)
-        await event.reply("القائمة الرئيسية:", buttons=main_menu_keyboard(user_id))
+        await message.reply("القائمة الرئيسية:", reply_markup=main_menu_keyboard(user_id))
 
-@app.on(events.CallbackQuery())
-async def callback_handler(event):
-    user_id = event.sender_id
-    data = event.data
-    
-    if data == b'login':
+@app.on_callback_query()
+async def callback_handler(client: Client, query: CallbackQuery):
+    user_id = query.from_user.id
+    data = query.data
+
+    if data == 'login':
         if user_data.get(user_id, {}).get('logged_in'):
-            await event.answer("⚠️ لديك جلسة نشطة بالفعل!", alert=True)
+            await query.answer("⚠️ لديك جلسة نشطة بالفعل!", show_alert=True)
             return
         user_states[user_id] = STATE_LOGIN_PHONE
-        await event.edit("📱 الرجاء إرسال رقم هاتفك مع رمز الدولة\n"
-                         "مثال: +201234567890")
-
-    elif data == b'set_message':
-        user_states[user_id] = STATE_SET_MESSAGE
-        await event.edit("📝 أرسل الرسالة التي تريد نشرها.")
-    
-    elif data == b'set_groups':
-        user_states[user_id] = STATE_SET_GROUPS
-        await event.edit("🌿 أرسل معرفات المجموعات (مفصولة بمسافات).")
-    
-    elif data == b'set_count':
-        user_states[user_id] = STATE_SET_COUNT
-        await event.edit("🍀 أرسل عدد مرات النشر المطلوبة.")
-    
-    elif data == b'set_interval':
-        await event.edit("⏱ اختر الفترة بين النشرات:", buttons=timing_keyboard())
-
-    elif data.startswith(b'interval_'):
-        interval = int(data.split(b'_')[1].decode())
-        user_data[user_id]['interval'] = interval
-        save_data()
-        await event.edit(
-            f"✅ تم ضبط التوقيت على كل {interval//60} دقائق",
-            buttons=main_menu_keyboard(user_id)
+        await query.message.edit_text(
+            "📱 الرجاء إرسال رقم هاتفك مع رمز الدولة\n"
+            "مثال: +201234567890",
+            parse_mode=ParseMode.MARKDOWN
         )
 
-    elif data == b'start_posting':
+    elif data == 'set_message':
+        user_states[user_id] = STATE_SET_MESSAGE
+        await query.message.edit_text("📝 أرسل الرسالة التي تريد نشرها.")
+    
+    elif data == 'set_groups':
+        user_states[user_id] = STATE_SET_GROUPS
+        await query.message.edit_text("🌿 أرسل معرفات المجموعات (مفصولة بمسافات).")
+    
+    elif data == 'set_count':
+        user_states[user_id] = STATE_SET_COUNT
+        await query.message.edit_text("🍀 أرسل عدد مرات النشر المطلوبة.")
+    
+    elif data == 'set_interval':
+        await query.message.edit_text("⏱ اختر الفترة بين النشرات:", reply_markup=timing_keyboard())
+
+    elif data.startswith('interval_'):
+        interval = int(data.split('_')[1])
+        user_data[user_id]['interval'] = interval
+        save_data()
+        await query.message.edit_text(
+            f"✅ تم ضبط التوقيت على كل {interval//60} دقائق",
+            reply_markup=main_menu_keyboard(user_id)
+        )
+
+    elif data == 'start_posting':
         if await validate_user_settings(user_id):
             user_data[user_id]['posting'] = True
+            user_data[user_id]['chat_id'] = query.message.chat.id
             save_data()
-            await event.answer("🚀 بدأ النشر التلقائي...", alert=True)
+            await query.answer("🚀 بدأ النشر التلقائي...", show_alert=True)
             asyncio.create_task(start_autoposting(user_id, app))
         else:
-            await event.answer("❌ يرجى إكمال جميع إعدادات البوت أولاً", alert=True)
+            await query.answer("❌ يرجى إكمال جميع إعدادات البوت أولاً", show_alert=True)
     
-    elif data == b'stop_posting':
+    elif data == 'stop_posting':
         user_data[user_id]['posting'] = False
         save_data()
-        await event.answer("🛑 تم إيقاف النشر التلقائي", alert=True)
-        await event.edit("🌿 القائمة الرئيسية", buttons=main_menu_keyboard(user_id))
+        await query.answer("🛑 تم إيقاف النشر التلقائي", show_alert=True)
+        await query.message.edit_text("🌿 القائمة الرئيسية", reply_markup=main_menu_keyboard(user_id))
 
-    elif data == b'bot_status':
-        await event.answer("جارٍ إعداد الحالة...", alert=False)
-        await show_bot_status(user_id, app, event.chat_id)
-    
-    elif data == b'back_to_main':
-        await event.edit("🌿 القائمة الرئيسية", buttons=main_menu_keyboard(user_id))
+    elif data == 'bot_status':
+        await show_bot_status(user_id, client, query.message.chat.id)
+        await query.answer()
+
+    elif data == 'back_to_main':
+        await query.message.edit_text("🌿 القائمة الرئيسية", reply_markup=main_menu_keyboard(user_id))
 
 # --- إعداد FastAPI للويب هوك ---
 api = FastAPI()
@@ -395,26 +408,22 @@ api = FastAPI()
 @api.on_event("startup")
 async def startup_event():
     load_data()
+    # هنا لا نستخدم app.set_webhook()
     await app.start()
-    await app(functions.bots.SetWebhookRequest(
-        url=WEBHOOK_URL_FULL,
-        max_connections=40,
-        drop_pending_updates=True
-    ))
+    await app.set_webhook(WEBHOOK_URL_FULL)
     logger.info(f"تم إعداد الويب هوك بنجاح على {WEBHOOK_URL_FULL}")
     logger.info("البوت يعمل بنجاح!")
 
 @api.on_event("shutdown")
 async def shutdown_event():
     save_data()
-    await app.run_until_disconnected()
-    await app.disconnect()
+    await app.stop()
+    await app.set_webhook(None) # تعطيل الويب هوك عند إيقاف التشغيل
     logger.info("إيقاف البوت...")
 
 @api.post(WEBHOOK_PATH)
 async def bot_webhook(request: Request):
-    update = await request.body()
-    update_dict = await app.to_json(update)
-    await app.process_updates(update_dict)
+    update = Update.parse_raw(await request.body())
+    await app.process_update(update)
     return Response(status_code=200)
 

@@ -6,7 +6,7 @@ import json
 # Replace with your actual bot token
 BOT_TOKEN = "7639996535:AAH_Ppw8jeiUg4nJjjEyOXaYlip289jSAio"
 # Replace with your actual Pixabay API Key
-PIXABAY_API_KEY = "YOUR_PIXABAY_KEY"
+PIXABAY_API_KEY = "51444506-bffefcaf12816bd85a20222d1"
 
 # Mandatory channels for subscription
 MANDATORY_CHANNELS = {

@@ -3,11 +3,10 @@ import re
 import pickle
 import logging
 import asyncio
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import FastAPI, Request
 from aiogram import Bot, Dispatcher, types
-from aiogram.contrib.fsm_storage.memory import MemoryStorage
-from aiogram.dispatcher import FSMContext
 from aiogram.dispatcher.filters.state import State, StatesGroup
+from aiogram.dispatcher.storage import BaseStorage
 from aiogram.utils.executor import start_webhook
 from pyrogram import Client
 from pyrogram.errors import (
@@ -32,6 +31,59 @@ API_HASH = os.getenv("API_HASH", "49d3f43531a92b3f5bc403766313ca1e")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL", "https://autu2.onrender.com")
 WEBHOOK_PATH = "/webhook"
 WEBHOOK_URL_FULL = f"{WEBHOOK_URL}{WEBHOOK_PATH}"
+
+# تخزين الحالة في الذاكرة (بدون aiogram.contrib)
+class MemoryStorage(BaseStorage):
+    def __init__(self):
+        self.data = {}
+
+    async def wait_closed(self):
+        pass
+
+    async def close(self):
+        self.data.clear()
+
+    async def get_state(self, *args, **kwargs):
+        chat = kwargs.get('chat')
+        user = kwargs.get('user')
+        key = f"fsm:{chat}:{user}"
+        return self.data.get(key, {}).get('state')
+
+    async def get_data(self, *args, **kwargs):
+        chat = kwargs.get('chat')
+        user = kwargs.get('user')
+        key = f"fsm:{chat}:{user}"
+        return self.data.get(key, {}).get('data', {})
+
+    async def set_state(self, *args, **kwargs):
+        chat = kwargs.get('chat')
+        user = kwargs.get('user')
+        state = kwargs.get('state')
+        key = f"fsm:{chat}:{user}"
+        if key not in self.data:
+            self.data[key] = {}
+        self.data[key]['state'] = state
+
+    async def set_data(self, *args, **kwargs):
+        chat = kwargs.get('chat')
+        user = kwargs.get('user')
+        data = kwargs.get('data')
+        key = f"fsm:{chat}:{user}"
+        if key not in self.data:
+            self.data[key] = {}
+        self.data[key]['data'] = data
+
+    async def update_data(self, *args, **kwargs):
+        chat = kwargs.get('chat')
+        user = kwargs.get('user')
+        data = kwargs.get('data')
+        key = f"fsm:{chat}:{user}"
+        if key not in self.data:
+            self.data[key] = {'data': {}}
+        self.data[key]['data'].update(data)
+
+    async def reset_state(self, *args, **kwargs):
+        await self.set_state(state=None, *args, **kwargs)
 
 # تكوين Aiogram
 bot = Bot(token=TOKEN)

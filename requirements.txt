@@ -1,6 +1,6 @@
-fastapi
-uvicorn
-aiogram
-pyrogram
-tgcrypto
-python-dotenv
+fastapi>=0.68.0
+uvicorn>=0.15.0
+aiogram>=2.14.0
+pyrogram>=1.4.0
+tgcrypto>=1.2.2
+python-dotenv>=0.19.0

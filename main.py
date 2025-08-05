@@ -18,7 +18,9 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # بيانات البوت
-TOKEN = "7968375518:AAGGfLq9elxG9GGzNiu_q_VJvPbz07Zx1Qc"
+TOKEN = "
+          8059858208:AAEfjTIUhSiFdYLFB5B_TvGvaAXXZv5L67A
+        "
 API_ID = 23656977
 API_HASH = "49d3f43531a92b3f5bc403766313ca1e"
 

@@ -398,4 +398,4 @@ def start_auto_posting(user_id, chat_id):
 if __name__ == '__main__':
     load_data()
     logger.info("جارٍ تشغيل البوت...")
-    bot.infinity_polling()
+    bot.polling(none_stop=True, timeout=60) 

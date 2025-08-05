@@ -408,7 +408,6 @@ api = FastAPI()
 @api.on_event("startup")
 async def startup_event():
     load_data()
-    # هنا لا نستخدم app.set_webhook()
     await app.start()
     await app.set_webhook(WEBHOOK_URL_FULL)
     logger.info(f"تم إعداد الويب هوك بنجاح على {WEBHOOK_URL_FULL}")
@@ -427,3 +426,4 @@ async def bot_webhook(request: Request):
     await app.process_update(update)
     return Response(status_code=200)
 
+ 

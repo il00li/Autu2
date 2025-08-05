@@ -7,7 +7,8 @@ from pyrogram.errors import (
     PhoneCodeExpired,
     PhoneNumberInvalid,
     PhoneNumberUnoccupied,
-    BadRequest
+    BadRequest,
+    FloodWait
 )
 import asyncio
 import logging
@@ -15,11 +16,8 @@ import re
 import os
 import pickle
 import time
-import nest_asyncio
-from threading import Thread
-
-# حل مشكلة event loop
-nest_asyncio.apply()
+import sys
+import threading
 
 # تكوين السجل
 logging.basicConfig(
@@ -39,6 +37,7 @@ bot = telebot.TeleBot(TOKEN)
 # تخزين بيانات المستخدمين
 user_data = {}
 temp_sessions = {}
+data_lock = threading.Lock()  # لمنع تضارب الوصول للبيانات
 
 # خيارات التوقيت (بالثواني)
 TIMING_OPTIONS = {
@@ -61,19 +60,19 @@ def load_data():
 
 # حفظ البيانات
 def save_data():
-    try:
-        with open('user_data.pkl', 'wb') as f:
-            pickle.dump(user_data, f)
-            logger.info("تم حفظ بيانات المستخدمين بنجاح")
-    except Exception as e:
-        logger.error(f"خطأ في حفظ البيانات: {e}")
+    with data_lock:
+        try:
+            with open('user_data.pkl', 'wb') as f:
+                pickle.dump(user_data, f)
+                logger.info("تم حفظ بيانات المستخدمين بنجاح")
+        except Exception as e:
+            logger.error(f"خطأ في حفظ البيانات: {e}")
 
 # إنشاء لوحة المفاتيح الرئيسية
 def main_menu_keyboard(user_id):
     markup = types.InlineKeyboardMarkup()
     
-    # خطوات الإعداد
-    if user_id not in user_data or not user_data[user_id].get('logged_in'):
+    if user_id not in user_data or not user_data.get(user_id, {}).get('logged_in'):
         markup.add(types.InlineKeyboardButton("🌱 1. تسجيل الدخول", callback_data='login'))
     else:
         markup.add(types.InlineKeyboardButton("📝 2. تعيين الرسالة", callback_data='set_message'))
@@ -81,7 +80,6 @@ def main_menu_keyboard(user_id):
         markup.add(types.InlineKeyboardButton("🍀 4. تعيين العدد", callback_data='set_count'))
         markup.add(types.InlineKeyboardButton("⏱ 5. ضبط التوقيت", callback_data='set_interval'))
     
-    # أزرار التحكم
     markup.row(
         types.InlineKeyboardButton("🚀 بدء النشر", callback_data='start_posting'),
         types.InlineKeyboardButton("🛑 إيقاف النشر", callback_data='stop_posting')
@@ -104,16 +102,16 @@ def timing_keyboard():
 @bot.message_handler(commands=['start'])
 def start(message):
     user_id = message.from_user.id
-    if user_id not in user_data:
-        user_data[user_id] = {
-            'logged_in': False,
-            'posting': False,
-            'groups': [],
-            'count': 0,
-            'interval': 300,  # 5 دقائق افتراضياً
-            'message': ''
-        }
-        save_data()
+    with data_lock:
+        if user_id not in user_data:
+            user_data[user_id] = {
+                'logged_in': False,
+                'posting': False,
+                'groups': [],
+                'count': 0,
+                'interval': 300,
+                'message': ''
+            }
     
     bot.send_message(
         message.chat.id,
@@ -134,22 +132,19 @@ def start(message):
 def handle_buttons(call):
     user_id = call.from_user.id
     chat_id = call.message.chat.id
-    message_id = call.message.message_id
     
     try:
-        # إنشاء بيانات المستخدم إذا لم تكن موجودة
-        if user_id not in user_data:
-            user_data[user_id] = {
-                'logged_in': False,
-                'posting': False,
-                'groups': [],
-                'count': 0,
-                'interval': 300,
-                'message': ''
-            }
-            save_data()
+        with data_lock:
+            if user_id not in user_data:
+                user_data[user_id] = {
+                    'logged_in': False,
+                    'posting': False,
+                    'groups': [],
+                    'count': 0,
+                    'interval': 300,
+                    'message': ''
+                }
         
-        # تسجيل الدخول
         if call.data == 'login':
             msg = bot.send_message(
                 chat_id,
@@ -159,8 +154,7 @@ def handle_buttons(call):
                 parse_mode='Markdown'
             )
             bot.register_next_step_handler(msg, process_phone)
-        
-        # تعيين الرسالة
+            
         elif call.data == 'set_message':
             msg = bot.send_message(
                 chat_id,
@@ -169,8 +163,7 @@ def handle_buttons(call):
                 parse_mode='Markdown'
             )
             bot.register_next_step_handler(msg, process_message)
-        
-        # تعيين المجموعات
+            
         elif call.data == 'set_groups':
             msg = bot.send_message(
                 chat_id,
@@ -179,8 +172,7 @@ def handle_buttons(call):
                 parse_mode='Markdown'
             )
             bot.register_next_step_handler(msg, process_groups)
-        
-        # تعيين العدد
+            
         elif call.data == 'set_count':
             msg = bot.send_message(
                 chat_id,
@@ -189,126 +181,125 @@ def handle_buttons(call):
                 parse_mode='Markdown'
             )
             bot.register_next_step_handler(msg, process_count)
-        
-        # تعيين التوقيت
+            
         elif call.data == 'set_interval':
             bot.edit_message_text(
                 "⏱ **اختر الفترة بين النشرات:**",
                 chat_id,
-                message_id,
+                call.message.message_id,
                 reply_markup=timing_keyboard()
             )
-        
-        # اختيار التوقيت
+            
         elif call.data.startswith('interval_'):
             interval = int(call.data.split('_')[1])
-            user_data[user_id]['interval'] = interval
-            bot.edit_message_text(
-                f"✅ تم ضبط التوقيت على كل {interval//60} دقائق",
+            with data_lock:
+                user_data[user_id]['interval'] = interval
+            bot.send_message(
                 chat_id,
-                message_id,
+                f"✅ تم ضبط التوقيت على كل {interval//60} دقائق",
                 reply_markup=main_menu_keyboard(user_id)
             )
             save_data()
-        
-        # بدء النشر
+            
         elif call.data == 'start_posting':
             if validate_user_settings(user_id):
-                user_data[user_id]['posting'] = True
+                with data_lock:
+                    user_data[user_id]['posting'] = True
                 save_data()
                 bot.answer_callback_query(call.id, "🚀 بدأ النشر التلقائي...")
-                # بدء النشر في خلفية منفصلة
-                Thread(target=start_auto_posting, args=(user_id, chat_id)).start()
+                threading.Thread(target=start_auto_posting, args=(user_id, chat_id)).start()
             else:
                 bot.answer_callback_query(
                     call.id,
                     "❌ يرجى إكمال جميع إعدادات البوت أولاً",
                     show_alert=True
                 )
-        
-        # إيقاف النشر
+                
         elif call.data == 'stop_posting':
-            user_data[user_id]['posting'] = False
+            with data_lock:
+                user_data[user_id]['posting'] = False
             save_data()
             bot.answer_callback_query(call.id, "🛑 تم إيقاف النشر التلقائي")
-        
-        # حالة البوت
+            
         elif call.data == 'bot_status':
             show_bot_status(user_id, call)
-        
-        # العودة للقائمة الرئيسية
+            
         elif call.data == 'back_to_main':
             bot.edit_message_text(
                 "🌿 **القائمة الرئيسية**",
                 chat_id,
-                message_id,
+                call.message.message_id,
                 reply_markup=main_menu_keyboard(user_id)
             )
-    
+            
     except Exception as e:
-        logger.error(f"خطأ في معالجة الأزرار: {e}")
+        logger.error(f"Error in handle_buttons: {e}")
         bot.answer_callback_query(call.id, "❌ حدث خطأ ما!")
 
 # تأكيد إعدادات المستخدم
 def validate_user_settings(user_id):
-    if user_id not in user_data:
-        return False
-    
-    data = user_data[user_id]
-    required = [
-        data.get('logged_in', False),
-        data.get('message', ''),
-        len(data.get('groups', [])) > 0,
-        data.get('count', 0) > 0,
-        data.get('interval', 0) > 0
-    ]
-    
-    return all(required)
+    with data_lock:
+        if user_id not in user_data:
+            return False
+        
+        data = user_data[user_id]
+        required = [
+            data.get('logged_in', False),
+            data.get('message', ''),
+            len(data.get('groups', [])) > 0,
+            data.get('count', 0) > 0,
+            data.get('interval', 0) > 0
+        ]
+        
+        return all(required)
 
 # عرض حالة البوت
 def show_bot_status(user_id, call):
-    if user_id not in user_data:
-        bot.answer_callback_query(call.id, "❌ لم يتم إعداد البوت بعد", show_alert=True)
-        return
-    
-    data = user_data[user_id]
-    status = (
-        "ℹ️ **حالة البوت:**\n\n"
-        f"🔹 الحساب: {'✅ مسجل' if data['logged_in'] else '❌ غير مسجل'}\n"
-        f"📝 الرسالة: {'✅ معينة' if data['message'] else '❌ غير معينة'}\n"
-        f"🌿 المجموعات: {len(data['groups'])} مجموعة\n"
-        f"🍀 العدد: {data['count']}\n"
-        f"⏱ التوقيت: كل {data['interval']//60} دقائق\n"
-        f"🚀 النشر: {'✅ نشط' if data.get('posting', False) else '❌ غير نشط'}"
-    )
-    
-    bot.answer_callback_query(call.id, status, show_alert=True)
+    with data_lock:
+        status = "ℹ️ **حالة البوت:**\n\n"
+        
+        if user_id in user_data:
+            data = user_data[user_id]
+            status += f"🔹 الحساب: {'✅ مسجل' if data.get('logged_in') else '❌ غير مسجل'}\n"
+            status += f"📝 الرسالة: {'✅ معينة' if data.get('message') else '❌ غير معينة'}\n"
+            status += f"🌿 المجموعات: {len(data.get('groups', []))}\n"
+            status += f"🍀 العدد: {data.get('count', '❌ غير معين')}\n"
+            status += f"⏱ التوقيت: كل {data.get('interval', 0)//60} دقائق\n"
+            status += f"🚀 النشر: {'✅ نشط' if data.get('posting', False) else '❌ غير نشط'}\n"
+        else:
+            status += "❌ لم يتم إعداد البوت بعد"
+        
+        bot.answer_callback_query(call.id, status, show_alert=True)
 
 # معالجة رقم الهاتف
 def process_phone(message):
     user_id = message.from_user.id
     
     try:
-        # التحقق من صحة رقم الهاتف
-        phone = message.text.strip().replace(" ", "").replace("-", "")
-        if not re.match(r"^\+\d{10,15}$", phone):
+        # تنظيف الرقم وإزالة المسافات
+        phone = re.sub(r'\s+', '', message.text.strip())
+        
+        # التحقق من صحة الرقم
+        if not re.match(r'^\+\d{10,15}$', phone):
             bot.reply_to(message, "❌ رقم الهاتف غير صحيح. مثال صحيح: +967734763250")
             return
         
         # التحقق من وجود جلسة نشطة
-        if user_id in user_data and user_data[user_id].get('logged_in'):
-            bot.reply_to(message, "⚠️ لديك جلسة نشطة بالفعل!")
-            return
+        with data_lock:
+            if user_id in user_data and user_data[user_id].get('logged_in'):
+                bot.reply_to(message, "⚠️ لديك جلسة نشطة بالفعل!")
+                return
         
         # إنشاء عميل Pyrogram
         client = Client(
-            name=f"user_{user_id}",
+            f"user_{user_id}",
             api_id=API_ID,
             api_hash=API_HASH,
+            phone_number=phone,
             in_memory=True
         )
         
-        # إرسال رمز التحقق
+        # الاتصال وإرسال رمز التحقق
         client.connect()
         sent_code = client.send_code(phone)
         
@@ -319,7 +310,6 @@ def process_phone(message):
             'phone_code_hash': sent_code.phone_code_hash
         }
         
-        # طلب رمز التحقق
         msg = bot.reply_to(
             message,
             "🔢 **تم إرسال رمز التحقق إليك.**\n"
@@ -327,11 +317,15 @@ def process_phone(message):
         )
         bot.register_next_step_handler(msg, process_code)
     
-    except (PhoneNumberInvalid, PhoneNumberUnoccupied) as e:
-        bot.reply_to(message, f"❌ {str(e)}")
+    except PhoneNumberInvalid:
+        bot.reply_to(message, "❌ رقم الهاتف غير صالح. الرجاء التحقق وإعادة المحاولة.")
+    except PhoneNumberUnoccupied:
+        bot.reply_to(message, "❌ رقم الهاتف غير مسجل في Telegram.")
+    except FloodWait as e:
+        bot.reply_to(message, f"⏳ تم حظر الطلب مؤقتًا. الرجاء الانتظار {e.x} ثواني قبل المحاولة مرة أخرى.")
     except Exception as e:
-        logger.error(f"خطأ في معالجة رقم الهاتف: {e}")
-        bot.reply_to(message, f"❌ حدث خطأ: {str(e)}")
+        logger.error(f"Error in process_phone: {e}")
+        bot.reply_to(message, f"❌ حدث خطأ غير متوقع: {str(e)}")
 
 # معالجة رمز التحقق
 def process_code(message):
@@ -339,12 +333,10 @@ def process_code(message):
     code = message.text.strip()
     
     try:
-        # التحقق من وجود الجلسة المؤقتة
         if user_id not in temp_sessions:
             bot.reply_to(message, "❌ انتهت الجلسة. الرجاء البدء من جديد.")
             return
         
-        # استرداد بيانات الجلسة
         client = temp_sessions[user_id]['client']
         phone = temp_sessions[user_id]['phone']
         phone_code_hash = temp_sessions[user_id]['phone_code_hash']
@@ -354,32 +346,32 @@ def process_code(message):
         
         # تخزين الجلسة
         session_string = client.export_session_string()
-        user_data[user_id]['session_string'] = session_string
-        user_data[user_id]['logged_in'] = True
+        with data_lock:
+            user_data[user_id]['session_string'] = session_string
+            user_data[user_id]['logged_in'] = True
         
         bot.reply_to(message, "✅ **تم تسجيل الدخول بنجاح!**")
         save_data()
     
     except SessionPasswordNeeded:
-        # طلب كلمة المرور الثنائية
         msg = bot.reply_to(
             message,
             "🔐 **الحساب محمي بكلمة مرور ثنائية.**\n"
             "الرجاء إرسال كلمة المرور:"
         )
         bot.register_next_step_handler(msg, process_password)
-    
-    except (PhoneCodeInvalid, PhoneCodeExpired) as e:
-        bot.reply_to(message, f"❌ {str(e)}")
+    except (PhoneCodeInvalid, PhoneCodeExpired):
+        bot.reply_to(message, "❌ رمز التحقق غير صحيح أو منتهي الصلاحية.")
     except Exception as e:
-        logger.error(f"خطأ في معالجة رمز التحقق: {e}")
-        bot.reply_to(message, f"❌ حدث خطأ: {str(e)}")
+        logger.error(f"Error in process_code: {e}")
+        bot.reply_to(message, f"❌ فشل تسجيل الدخول: {str(e)}")
     finally:
-        # تنظيف الجلسة المؤقتة
         if user_id in temp_sessions:
-            client = temp_sessions[user_id]['client']
-            client.disconnect()
-            del temp_sessions[user_id]
+            try:
+                temp_sessions[user_id]['client'].disconnect()
+                del temp_sessions[user_id]
+            except:
+                pass
 
 # معالجة كلمة المرور الثنائية
 def process_password(message):
@@ -387,12 +379,10 @@ def process_password(message):
     password = message.text
     
     try:
-        # التحقق من وجود الجلسة المؤقتة
         if user_id not in temp_sessions:
             bot.reply_to(message, "❌ انتهت الجلسة. الرجاء البدء من جديد.")
             return
         
-        # استرداد بيانات الجلسة
         client = temp_sessions[user_id]['client']
         
         # تسجيل الدخول بكلمة المرور
@@ -400,50 +390,49 @@ def process_password(message):
         
         # تخزين الجلسة
         session_string = client.export_session_string()
-        user_data[user_id]['session_string'] = session_string
-        user_data[user_id]['logged_in'] = True
+        with data_lock:
+            user_data[user_id]['session_string'] = session_string
+            user_data[user_id]['logged_in'] = True
         
         bot.reply_to(message, "✅ **تم تسجيل الدخول بنجاح!**")
         save_data()
     
     except Exception as e:
-        logger.error(f"خطأ في معالجة كلمة المرور: {e}")
+        logger.error(f"Error in process_password: {e}")
         bot.reply_to(message, f"❌ كلمة المرور غير صحيحة: {str(e)}")
     finally:
-        # تنظيف الجلسة المؤقتة
         if user_id in temp_sessions:
-            client = temp_sessions[user_id]['client']
-            client.disconnect()
-            del temp_sessions[user_id]
+            try:
+                temp_sessions[user_id]['client'].disconnect()
+                del temp_sessions[user_id]
+            except:
+                pass
 
 # معالجة الرسالة
 def process_message(message):
     user_id = message.from_user.id
-    user_data[user_id]['message'] = message.text
+    with data_lock:
+        user_data[user_id]['message'] = message.text
     bot.reply_to(message, "✅ **تم حفظ الرسالة بنجاح!**")
     save_data()
 
 # معالجة المجموعات
 def process_groups(message):
     user_id = message.from_user.id
-    groups = message.text.split()
+    groups = []
     
-    # تنظيف المعرفات
-    cleaned_groups = []
-    for group in groups:
-        # إزالة أي رابط وتحويله إلى معرف
+    for group in message.text.split():
         if group.startswith("https://t.me/"):
             group = "@" + group.split("/")[-1]
         elif group.startswith("t.me/"):
             group = "@" + group.split("/")[-1]
-        
-        cleaned_groups.append(group.strip())
+        elif group.startswith("https://telegram.me/"):
+            group = "@" + group.split("/")[-1]
+        groups.append(group.strip())
     
-    user_data[user_id]['groups'] = cleaned_groups
-    bot.reply_to(
-        message, 
-        f"✅ **تم حفظ {len(cleaned_groups)} مجموعة بنجاح!**"
-    )
+    with data_lock:
+        user_data[user_id]['groups'] = groups
+    bot.reply_to(message, f"✅ **تم حفظ {len(groups)} مجموعة بنجاح!**")
     save_data()
 
 # معالجة العدد
@@ -455,71 +444,106 @@ def process_count(message):
         if count <= 0:
             raise ValueError
         
-        user_data[user_id]['count'] = count
+        with data_lock:
+            user_data[user_id]['count'] = count
         bot.reply_to(message, f"✅ **تم تعيين عدد النشرات إلى {count}!**")
         save_data()
     
     except ValueError:
         bot.reply_to(message, "❌ الرجاء إدخال عدد صحيح موجب.")
 
-# بدء النشر التلقائي (بدون async)
+# بدء النشر التلقائي (بدون asyncio)
 def start_auto_posting(user_id, chat_id):
-    data = user_data[user_id]
+    with data_lock:
+        data = user_data.get(user_id, {})
+        if not data:
+            bot.send_message(chat_id, "❌ بيانات المستخدم غير موجودة!")
+            return
     
     try:
-        # إنشاء عميل Pyrogram
         client = Client(
-            name=f"user_{user_id}",
+            f"user_{user_id}",
             api_id=API_ID,
             api_hash=API_HASH,
-            session_string=data['session_string'],
+            session_string=data.get('session_string', ''),
             in_memory=True
         )
         
-        # بدء العميل
+        # بدء العميل بشكل متزامن
         client.start()
         bot.send_message(chat_id, "🚀 بدأ النشر التلقائي...")
         
         # حلقة النشر
-        for i in range(data['count']):
-            if not data.get('posting', True):
-                break
-                
-            for group in data['groups']:
+        for i in range(data.get('count', 0)):
+            with data_lock:
+                if not user_data.get(user_id, {}).get('posting', True):
+                    break
+            
+            for group in data.get('groups', []):
                 try:
-                    client.send_message(group, data['message'])
+                    # إرسال الرسالة
+                    client.send_message(group, data.get('message', ''))
                     logger.info(f"تم النشر في {group} ({i+1}/{data['count']})")
                     time.sleep(2)  # تأخير بين المجموعات
                 except BadRequest as e:
                     logger.error(f"خطأ في النشر: {e}")
                     bot.send_message(chat_id, f"❌ خطأ في النشر في {group}: {str(e)}")
+                except FloodWait as e:
+                    logger.warning(f"تم حظر الطلب مؤقتًا: انتظر {e.x} ثواني")
+                    time.sleep(e.x)
                 except Exception as e:
                     logger.error(f"خطأ غير متوقع: {e}")
                     bot.send_message(chat_id, f"❌ خطأ غير متوقع في النشر: {str(e)}")
             
             # انتظار الفترة الزمنية المحددة
-            if i < data['count'] - 1 and data.get('posting', True):
-                time.sleep(data['interval'])
+            if i < data.get('count', 0) - 1:
+                interval = data.get('interval', 300)
+                start_time = time.time()
+                while time.time() - start_time < interval:
+                    with data_lock:
+                        if not user_data.get(user_id, {}).get('posting', True):
+                            break
+                    time.sleep(1)
         
         bot.send_message(chat_id, "✅ تم الانتهاء من النشر!")
     
     except Exception as e:
-        logger.error(f"خطأ في النشر التلقائي: {e}")
+        logger.error(f"Error in start_auto_posting: {e}")
         bot.send_message(chat_id, f"❌ حدث خطأ في النشر: {str(e)}")
     finally:
-        # إيقاف العميل وتحديث الحالة
         try:
             client.stop()
         except:
             pass
-        user_data[user_id]['posting'] = False
+        with data_lock:
+            if user_id in user_data:
+                user_data[user_id]['posting'] = False
         save_data()
+
+# إيقاف عمليات البوت السابقة
+def stop_previous_instances():
+    try:
+        if sys.platform == 'win32':
+            os.system('taskkill /f /im python.exe')
+        else:
+            os.system('pkill -f "python.*bot.py"')
+        time.sleep(2)
+    except Exception as e:
+        print(f"Warning: {e}")
 
 # تشغيل البوت
 if __name__ == '__main__':
+    # إيقاف أي عمليات سابقة
+    stop_previous_instances()
+    
     # تحميل البيانات المحفوظة
     load_data()
     
-    # بدء البوت
+    # بدء البوت مع إعادة المحاولة عند الفشل
     logger.info("جارٍ تشغيل البوت...")
-    bot.polling(none_stop=True, timeout=60)
+    while True:
+        try:
+            bot.polling(none_stop=True, timeout=30)
+        except Exception as e:
+            logger.error(f"Bot polling error: {e}")
+            time.sleep(5)

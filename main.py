@@ -16,6 +16,9 @@ from pyrogram.errors import (
 )
 from pyrogram.enums import ParseMode
 
+from fastapi import FastAPI, Request
+from starlette.responses import Response
+
 # تكوين السجل
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -28,6 +31,8 @@ TOKEN = os.getenv("TOKEN", "8247037355:AAH2rRm9PJCXqcVISS8g-EL1lv3tvQTXFys")
 API_ID = int(os.getenv("APIID", "23656977"))
 API_HASH = os.getenv("APIHASH", "49d3f43531a92b3f5bc403766313ca1e")
 WEBHOOK_URL = os.getenv("WEBHOOKURL", "https://autu2.onrender.com")
+WEBHOOK_PATH = "/webhook"
+WEBHOOK_URL_FULL = f"{WEBHOOK_URL}{WEBHOOK_PATH}"
 
 # --- تخزين البيانات ---
 user_data: Dict[int, Dict[str, Any]] = {}
@@ -397,15 +402,37 @@ async def callback_handler(client: Client, query: CallbackQuery):
     elif data == 'back_to_main':
         await query.message.edit_text("🌿 القائمة الرئيسية", reply_markup=main_menu_keyboard(user_id))
 
-# --- تشغيل البوت في وضع الويب هوك ---
-if __name__ == "__main__":
+
+# --- إعداد FastAPI و Pyrogram للويب هوك ---
+api = FastAPI()
+
+@api.on_event("startup")
+async def startup_event():
     load_data()
     
-    # استخدام دالة run لتشغيل البوت بوضع الويب هوك
-    # هذه الطريقة تتجنب الحاجة لـ FastAPI و uvicorn
-    app.run(
-        webhook_url=WEBHOOK_URL,
-        host="0.0.0.0",
-        port=int(os.getenv("PORT", 8080))
-    )
+    # تأكيد أن البوت في وضع الويب هوك
+    app.set_is_running(True)
+    
+    # تشغيل البوت مع الويب هوك
+    await app.start()
+    
+    # قم بتعيين الويب هوك بشكل يدوي باستخدام api.set_webhook()
+    await app.set_webhook(WEBHOOK_URL)
+    
+    logger.info(f"تم إعداد الويب هوك بنجاح على {WEBHOOK_URL}")
+    logger.info("البوت يعمل بنجاح!")
+
+@api.on_event("shutdown")
+async def shutdown_event():
+    save_data()
+    # تعطيل الويب هوك
+    await app.set_webhook(None)
+    await app.stop()
+    logger.info("إيقاف البوت...")
+
+@api.post(WEBHOOK_PATH)
+async def bot_webhook(request: Request):
+    update = Update.parse_raw(await request.body())
+    await app.process_update(update)
+    return Response(status_code=200)
 

@@ -3,7 +3,7 @@ from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 import requests
 import time
 
-TOKEN = '8373741818:AAHTDbjVJUu6tY29pUvuUb38rSLQuSgBTQA'
+TOKEN = '8373741818:AAHca5FsSiWwQiNFXL3CLeeFLtbOiJiQeJk'
 PIXABAY_API_KEY = '51444506-bffefcaf12816bd85a20222d1'
 ADMIN_ID = 7251748706  # معرف المدير
 

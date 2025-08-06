@@ -9,7 +9,7 @@ FLATICON_API_KEY = '92d3add3fbed4ab7a1dcb2cc1cb55a3f'
 SECONDARY_API_KEY = 'cccf9331ea24469f8356d5bbaa2b929a'
 
 # تهيئة البوت
-bot = telebot.TeleBot('7968375518:AAHhFQcaIvAS48SRnVUxQ7fd_bltB9MTIBc ')  # استبدل بـ توكن بوتك
+bot = telebot.TeleBot('7968375518:AAHhFQcaIvAS48SRnVUxQ7fd_bltB9MTIBc')  # استبدل بـ توكن بوتك
 
 # تخزين مؤقت لنتائج البحث
 user_data = {}

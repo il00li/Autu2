@@ -88,6 +88,7 @@ def send_audio(chat_id, audio, caption, reply_markup=None):
     try:
         response = requests.post(url, json=payload)
         response.raise_for_status()
+        return response.json()
     except Exception as e:
         logger.error(f"خطأ في إرسال ملف صوتي: {e}")
         return None
@@ -103,9 +104,20 @@ def delete_message(chat_id, message_id):
     except Exception as e:
         logger.error(f"خطأ في حذف رسالة: {e}")
 
+def answer_callback_query(callback_query_id, text=None, show_alert=False):
+    url = f"https://api.telegram.org/bot{TOKEN}/answerCallbackQuery"
+    payload = {"callback_query_id": callback_query_id, "text": text, "show_alert": show_alert}
+    try:
+        requests.post(url, json=payload)
+    except Exception as e:
+        logger.error(f"خطأ في إرسال إجابة للـ callback: {e}")
+
 # ================ لوحات المفاتيح ================
 def get_main_menu_keyboard():
-    return {"inline_keyboard": [[{"text": "انقر للبحث 🎧", "callback_data": "start_search_type"}]]}
+    return {"inline_keyboard": [
+        [{"text": "انقر للبحث 🎧", "callback_data": "start_search_type"}],
+        [{"text": "عن المطور 🧑‍💻", "callback_data": "about_developer"}]
+    ]}
 
 def get_search_type_keyboard():
     return {"inline_keyboard": [
@@ -122,6 +134,11 @@ def get_navigation_keyboard(index, total_results, result_type):
         keyboard_buttons.append({"text": "التالي »", "callback_data": f'next_{result_type}'})
     
     return {"inline_keyboard": [keyboard_buttons]} if keyboard_buttons else None
+
+def get_back_keyboard():
+    return {"inline_keyboard": [
+        [{"text": "رجوع ↩️", "callback_data": "back_to_menu"}]
+    ]}
     # ================ إدارة الحالة (تخزين مؤقت) ================
 user_states = {}
 
@@ -166,6 +183,7 @@ def handle_callback_query(callback_query):
     data = callback_query['data']
     
     current_state = get_user_state(user_id)
+    answer_callback_query(callback_query['id']) # Added this line to acknowledge button press
     
     if data == 'check_subscription':
         if check_subscription(user_id):
@@ -174,19 +192,27 @@ def handle_callback_query(callback_query):
             send_message(chat_id, "🌟 قائمة البحث الرئيسية 🌟", reply_markup=get_main_menu_keyboard())
             set_user_state(user_id, "MAIN_MENU")
         else:
-            requests.post(f"https://api.telegram.org/bot{TOKEN}/answerCallbackQuery", json={"callback_query_id": callback_query['id'], "text": "لم تكتمل الاشتراكات بعد! ❌", "show_alert": True})
+            answer_callback_query(callback_query['id'], "لم تكتمل الاشتراكات بعد! ❌", show_alert=True)
             
     elif data == 'start_search_type' and current_state['state'] == "MAIN_MENU":
-        edit_message_reply_markup(chat_id, message_id, get_search_type_keyboard())
+        send_message(chat_id, "🔎 اختر نوع البحث:", reply_markup=get_search_type_keyboard())
+        delete_message(chat_id, message_id)
         set_user_state(user_id, "SEARCH_TYPE")
         
     elif data == 'search_photo' and current_state['state'] == "SEARCH_TYPE":
         send_message(chat_id, "🖼️ أرسل كلمة البحث للصور الآن:")
+        delete_message(chat_id, message_id)
         set_user_state(user_id, "SEARCHING_PHOTO")
     
     elif data == 'search_sound' and current_state['state'] == "SEARCH_TYPE":
         send_message(chat_id, "🎶 أرسل كلمة البحث للمؤثرات الصوتية الآن:")
+        delete_message(chat_id, message_id)
         set_user_state(user_id, "SEARCHING_SOUND")
+
+    elif data == 'about_developer':
+        about_text = "👨‍💻 عن المطوّر @Ili8_8ill  \nمطوّر مبتدئ في عالم بوتات تيليجرام، بدأ رحلته بشغف كبير لتعلم البرمجة وصناعة أدوات ذكية تساعد المستخدمين وتضيف قيمة للمجتمعات الرقمية. يسعى لتطوير مهاراته يومًا بعد يوم من خلال التجربة، التعلم، والمشاركة في مشاريع بسيطة لكنها فعّالة.\n\n🔰 ما يميّزه في هذه المرحلة:  \n\n- حب الاستكشاف والتعلّم الذاتي  \n- بناء بوتات بسيطة بمهام محددة مثل الرد التلقائي أو إدارة المجموعات  \n- استخدام أدوات مثل BotFather وبيئة Python لتجربة الأفكار  \n- الانفتاح على النقد والتطوير المستمر\n\n📡 القنوات المرتبطة:  \n\n- @crazys7  \n- @AWU87  \n\n🌱 رؤية المطوّر:  \nالانطلاق من الأساسيات نحو الاحتراف، خطوة بخطوة، مع طموح لصناعة بوتات تلبي احتياجات حقيقية وتُحدث فرقًا.\n\n📬 للتواصل أو تبادل الخبرات:  \nتابع الحساب @Ili8_8ill وشارك في رحلة التطوّر."
+        send_message(chat_id, about_text, get_back_keyboard())
+        delete_message(chat_id, message_id)
     
     elif data.startswith('next_photo') and current_state['state'] == "RESULTS_PHOTO":
         navigate_photo_results(user_id, chat_id, message_id, 'next')
@@ -369,4 +395,3 @@ if __name__ == '__main__':
     
     port = int(os.environ.get('PORT', 8443))
     web.run_app(app, host='0.0.0.0', port=port)
-    

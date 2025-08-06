@@ -1,12 +1,13 @@
 import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 import requests
-import json
+from urllib.parse import quote
+import io
 
-# Iconify API
-ICONIFY_API_URL = 'https://api.iconify.design/search'
+# Iconify API - مجاني وغير محدود
+ICONIFY_API = "https://api.iconify.design"
 
-bot = telebot.TeleBot('7968375518:AAHhFQcaIvAS48SRnVUxQ7fd_bltB9MTIBc ')  # استبدل بـ توكن بوتك
+bot = telebot.TeleBot('7968375518:AAHhFQcaIvAS48SRnVUxQ7fd_bltB9MTIBc')  # استبدل بـ توكن بوتك
 
 # تخزين مؤقت لنتائج البحث
 user_data = {}
@@ -20,7 +21,8 @@ EMOJI = {
     'prev': '←',
     'download': '↓',
     'info': 'ℹ️',
-    'error': '!'
+    'error': '!',
+    'icon': '*'
 }
 
 # قنوات الاشتراك الإجباري
@@ -53,7 +55,7 @@ def send_welcome(message):
 
     welcome_text = f"""
     أهلاً بك مصممي المبدع {EMOJI['welcome']}
-    هذا البوت يساعدك في العثور على أفضل الأيقونات المجانية {EMOJI['design']}
+    هذا البوت يساعدك في العثور على أفضل الأيقونات المجانية {EMOJI['icon']}
     
     للتأكد من حصولك على أفضل النتائج:
     - @crazys7
@@ -88,7 +90,7 @@ def handle_callback(call):
         {EMOJI['info']} وصف البوت:
         
         هذا البوت هو مساعدك الشخصي للعثور على أيقونات تصميمية 
-        بجودة عالية ومجانية {EMOJI['design']}
+        بجودة عالية ومجانية {EMOJI['icon']}
         
         يمكنك البحث عن أيقونات SVG لاستخدامها في مشاريعك.
         
@@ -99,6 +101,46 @@ def handle_callback(call):
     elif call.data == 'start_search':
         msg = bot.send_message(user_id, f'أرسل كلمة البحث للأيقونات {EMOJI["search"]}:')
         bot.register_next_step_handler(msg, process_search_query)
+    
+    elif call.data.startswith('result_'):
+        data_parts = call.data.split('_')
+        result_index = int(data_parts[1])
+        action = data_parts[2]
+        
+        if user_id in user_data and 'results' in user_data[user_id]:
+            results = user_data[user_id]['results']
+            current_index = user_data[user_id].get('current_index', 0)
+            
+            if action == 'next':
+                current_index = min(current_index + 1, len(results) - 1)
+            elif action == 'prev':
+                current_index = max(current_index - 1, 0)
+            
+            user_data[user_id]['current_index'] = current_index
+            show_result(user_id, current_index)
+    
+    elif call.data.startswith('download_'):
+        if user_id in user_data and 'results' in user_data[user_id]:
+            current_index = user_data[user_id]['current_index']
+            result = user_data[user_id]['results'][current_index]
+            
+            # تحميل الأيقونة كملف SVG
+            icon_name = result['name']
+            svg_url = f"{ICONIFY_API}/{icon_name}.svg"
+            
+            try:
+                # جلب محتوى SVG
+                response = requests.get(svg_url)
+                if response.status_code == 200:
+                    # إنشاء ملف في الذاكرة وإرساله
+                    svg_file = io.BytesIO(response.content)
+                    svg_file.name = f"{icon_name.replace(':', '-')}.svg"
+                    bot.send_document(user_id, svg_file, caption=f"الأيقونة: {icon_name}")
+                else:
+                    bot.send_message(user_id, f"تعذر تحميل الأيقونة {EMOJI['error']}")
+            except Exception as e:
+                print(f"Download error: {e}")
+                bot.send_message(user_id, f"حدث خطأ في التحميل {EMOJI['error']}")
 
 def process_search_query(message):
     user_id = message.from_user.id
@@ -130,14 +172,12 @@ def show_result(user_id, index):
         return
     
     results = user_data[user_id]['results']
-    if index < 0 or index >= len(results):
-        return
-    
     result = results[index]
     
     # إنشاء واجهة النتائج
     caption = f"النتيجة {index+1} من {len(results)}\n"
-    caption += f"الاسم: {result['name']}\n"
+    caption += f"اسم الأيقونة: {result['name']}\n"
+    caption += f"المكتبة: {result.get('provider', 'غير معروف')}"
     
     # أزرار التنقل والتحميل
     markup = InlineKeyboardMarkup(row_width=3)
@@ -147,63 +187,27 @@ def show_result(user_id, index):
     
     markup.add(btn_prev, btn_download, btn_next)
     
-    # إرسال صورة الأيقونة (كصورة مصغرة)
-    # نستخدم رابط SVG لكننا نعرضه كصورة في التلجرام
-    svg_url = f"https://api.iconify.design/{result['name']}.svg"
+    # إرسال رابط الصورة المصغرة كرسالة
     try:
-        # نستخدم خدمة تحويل SVG إلى PNG للعرض (مثال: svg2png.vercel.app)
-        png_url = f"https://svg2png.vercel.app/api/svg2png?url={svg_url}"
+        # استخدام خدمة تحويل SVG إلى PNG للعرض
+        png_url = f"https://api.iconify.design/{result['name']}.png?width=256&height=256"
         bot.send_photo(user_id, png_url, caption=caption, reply_markup=markup)
     except Exception as e:
-        print(f"Error sending icon: {e}")
+        print(f"Error sending preview: {e}")
+        # إذا فشل إرسال الصورة، إرسال الرسالة فقط مع الأزرار
         bot.send_message(user_id, caption, reply_markup=markup)
 
-@bot.callback_query_handler(func=lambda call: call.data.startswith('result_') or call.data.startswith('download_'))
-def handle_result_nav(call):
-    user_id = call.from_user.id
-    data_parts = call.data.split('_')
-    
-    if call.data.startswith('download_'):
-        index = int(data_parts[1])
-        if user_id in user_data and 'results' in user_data[user_id]:
-            result = user_data[user_id]['results'][index]
-            svg_url = f"https://api.iconify.design/{result['name']}.svg"
-            bot.send_document(user_id, svg_url, caption=f"أيقونة: {result['name']}")
-        return
-    
-    # معالجة التنقل
-    index = int(data_parts[1])
-    action = data_parts[2]
-    
-    if user_id in user_data and 'results' in user_data[user_id]:
-        results = user_data[user_id]['results']
-        current_index = user_data[user_id].get('current_index', 0)
-        
-        if action == 'next':
-            current_index = min(current_index + 1, len(results) - 1)
-        elif action == 'prev':
-            current_index = max(current_index - 1, 0)
-        
-        user_data[user_id]['current_index'] = current_index
-        show_result(user_id, current_index)
-
 def search_icons(query):
-    params = {
-        'query': query,
-        'limit': 50  # الحد الأقصى المسموح به
-    }
-    
+    """البحث عن الأيقونات باستخدام Iconify API"""
     try:
-        response = requests.get(ICONIFY_API_URL, params=params)
-        
-        # طباعة الاستجابة للتصحيح
-        print(f"Iconify API Status: {response.status_code}")
+        url = f"{ICONIFY_API}/search?query={quote(query)}&limit=20"
+        response = requests.get(url)
         
         if response.status_code == 200:
             data = response.json()
-            return data.get('icons', [])[:10]  # نأخذ أول 10 نتائج
+            return data.get('icons', [])
         else:
-            print(f"Iconify API Error: {response.text}")
+            print(f"Iconify API Error: {response.status_code} - {response.text}")
             return []
     except Exception as e:
         print(f"API Exception: {e}")

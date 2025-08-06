@@ -4,7 +4,7 @@ import requests
 import time
 
 TOKEN = '8373741818:AAHTndgrs7FXSQr9arQ-_-3JXIRenv9k2x8'
-PIXABAY_API_KEY = '39878241-6c3d5e7d3b1d7a2d2c6f4c1a3'  # استبدلها بمفتاحك الفعلي
+PIXABAY_API_KEY = '51444506-bffefcaf12816bd85a20222d1'  # استبدلها بمفتاحك الفعلي
 ADMIN_ID = 7251748706  # معرف المدير
 
 bot = telebot.TeleBot(TOKEN)

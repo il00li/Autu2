@@ -3,6 +3,8 @@ from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 import requests
 import time
 import logging
+import re
+import urllib.parse
 
 # تهيئة نظام التسجيل
 logging.basicConfig(
@@ -24,6 +26,14 @@ REQUIRED_CHANNELS = ['@crazys7', '@AWU87']
 user_data = {}
 new_users = set()  # لتتبع المستخدمين الجدد
 
+def is_valid_url(url):
+    """التحقق من صحة عنوان URL"""
+    try:
+        result = urllib.parse.urlparse(url)
+        return all([result.scheme, result.netloc])
+    except:
+        return False
+
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
     user_id = message.from_user.id
@@ -40,7 +50,7 @@ def send_welcome(message):
     if not_subscribed:
         markup = InlineKeyboardMarkup()
         markup.add(InlineKeyboardButton("تحقق من الاشتراك", callback_data="check_subscription"))
-        msg = bot.send_message(chat_id, "⛔ يجب الاشتراك في القنوات التالية أولاً:\n" + "\n".join(not_subscribed), reply_markup=markup)
+        msg = bot.send_message(chat_id, "يجب الاشتراك في القنوات التالية اولا:\n" + "\n".join(not_subscribed), reply_markup=markup)
         # حفظ معرف الرسالة الرئيسية للمستخدم
         if user_id not in user_data:
             user_data[user_id] = {}
@@ -52,12 +62,12 @@ def notify_admin(user_id, username):
     """إرسال إشعار للمدير عند انضمام مستخدم جديد"""
     try:
         username = f"@{username}" if username else "بدون معرف"
-        message = f"👤 مستخدم جديد انضم للبوت:\n\n"
-        message += f"🆔 ID: {user_id}\n"
-        message += f"👤 Username: {username}"
+        message = "مستخدم جديد انضم للبوت:\n\n"
+        message += f"ID: {user_id}\n"
+        message += f"Username: {username}"
         bot.send_message(ADMIN_ID, message)
     except Exception as e:
-        logger.error(f"Error notifying admin: {e}")
+        logger.error(f"خطأ في إرسال إشعار للمدير: {e}")
 
 def check_subscription(user_id):
     not_subscribed = []
@@ -68,7 +78,7 @@ def check_subscription(user_id):
             if chat_member.status not in ['member', 'administrator', 'creator']:
                 not_subscribed.append(channel)
         except Exception as e:
-            logger.error(f"Error checking subscription: {e}")
+            logger.error(f"خطأ في التحقق من الاشتراك: {e}")
             not_subscribed.append(channel)
     return not_subscribed
 
@@ -78,10 +88,10 @@ def show_main_menu(chat_id, user_id):
         user_data[user_id] = {}
     
     markup = InlineKeyboardMarkup()
-    markup.add(InlineKeyboardButton("انقر للبحث ⌕", callback_data="search"))
-    markup.add(InlineKeyboardButton("(⊙-DEV-☉)", callback_data="about_dev"))
+    markup.add(InlineKeyboardButton("انقر للبحث", callback_data="search"))
+    markup.add(InlineKeyboardButton("عن المطور", callback_data="about_dev"))
     
-    welcome_msg = "(◕‿◕)\n   \|/          PEXELBO\n   / \\\nابحث بالانجليزي '"
+    welcome_msg = "PEXELBO\nابحث بالانجليزي"
     
     # إذا كانت هناك رسالة سابقة، نقوم بتعديلها بدلاً من إرسال رسالة جديدة
     if 'main_message_id' in user_data[user_id]:
@@ -94,7 +104,7 @@ def show_main_menu(chat_id, user_id):
             )
             return
         except Exception as e:
-            logger.error(f"Error editing main menu: {e}")
+            logger.error(f"خطأ في تعديل القائمة الرئيسية: {e}")
             # إذا فشل التعديل، نرسل رسالة جديدة
             msg = bot.send_message(chat_id, welcome_msg, reply_markup=markup)
             user_data[user_id]['main_message_id'] = msg.message_id
@@ -116,11 +126,11 @@ def verify_subscription(call):
             bot.edit_message_text(
                 chat_id=chat_id,
                 message_id=call.message.message_id,
-                text="⛔ يجب الاشتراك في القنوات التالية أولاً:\n" + "\n".join(not_subscribed),
+                text="يجب الاشتراك في القنوات التالية اولا:\n" + "\n".join(not_subscribed),
                 reply_markup=markup
             )
         except Exception as e:
-            logger.error(f"Error editing subscription message: {e}")
+            logger.error(f"خطأ في تعديل رسالة الاشتراك: {e}")
     else:
         show_main_menu(chat_id, user_id)
 
@@ -154,7 +164,7 @@ def show_content_types(call):
             reply_markup=markup
         )
     except Exception as e:
-        logger.error(f"Error showing content types: {e}")
+        logger.error(f"خطأ في عرض انواع المحتوى: {e}")
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("type_"))
 def request_search_term(call):
@@ -169,17 +179,17 @@ def request_search_term(call):
     
     # طلب كلمة البحث مع زر إلغاء
     markup = InlineKeyboardMarkup()
-    markup.add(InlineKeyboardButton("إلغاء البحث", callback_data="cancel_search"))
+    markup.add(InlineKeyboardButton("الغاء البحث", callback_data="cancel_search"))
     
     try:
         bot.edit_message_text(
             chat_id=chat_id,
             message_id=call.message.message_id,
-            text="🔍 أرسل كلمة البحث باللغة الإنجليزية:",
+            text="ارسل كلمة البحث باللغة الانجليزية:",
             reply_markup=markup
         )
     except Exception as e:
-        logger.error(f"Error requesting search term: {e}")
+        logger.error(f"خطأ في طلب كلمة البحث: {e}")
     
     # حفظ معرف الرسالة للاستخدام لاحقاً
     user_data[user_id]['search_message_id'] = call.message.message_id
@@ -200,7 +210,7 @@ def process_search_term(message, user_id):
     try:
         bot.delete_message(chat_id, message.message_id)
     except Exception as e:
-        logger.error(f"Error deleting user input: {e}")
+        logger.error(f"خطأ في حذف رسالة المستخدم: {e}")
     
     # استرجاع نوع المحتوى
     if user_id not in user_data or 'content_type' not in user_data[user_id]:
@@ -214,11 +224,11 @@ def process_search_term(message, user_id):
         bot.edit_message_text(
             chat_id=chat_id,
             message_id=user_data[user_id]['search_message_id'],
-            text="🔍 جاري البحث في قاعدة البيانات...",
+            text="جاري البحث في قاعدة البيانات...",
             reply_markup=None
         )
     except Exception as e:
-        logger.error(f"Error showing loading message: {e}")
+        logger.error(f"خطأ في عرض رسالة التحميل: {e}")
     
     # البحث في Pixabay
     results = search_pixabay(search_term, content_type)
@@ -226,18 +236,18 @@ def process_search_term(message, user_id):
     if not results or 'hits' not in results or len(results['hits']) == 0:
         # عرض خيارات عند عدم وجود نتائج
         markup = InlineKeyboardMarkup()
-        markup.add(InlineKeyboardButton("🔍 بحث جديد", callback_data="search"))
-        markup.add(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="back_to_main"))
+        markup.add(InlineKeyboardButton("بحث جديد", callback_data="search"))
+        markup.add(InlineKeyboardButton("القائمة الرئيسية", callback_data="back_to_main"))
         
         try:
             bot.edit_message_text(
                 chat_id=chat_id,
                 message_id=user_data[user_id]['search_message_id'],
-                text=f"⚠️ لم يتم العثور على نتائج لكلمة: {search_term}\nيرجى المحاولة بكلمات أخرى",
+                text=f"لم يتم العثور على نتائج لكلمة: {search_term}\nيرجى المحاولة بكلمات أخرى",
                 reply_markup=markup
             )
         except Exception as e:
-            logger.error(f"Error showing no results: {e}")
+            logger.error(f"خطأ في عرض رسالة عدم وجود نتائج: {e}")
         return
     
     # حفظ النتائج
@@ -272,14 +282,14 @@ def search_pixabay(query, content_type):
         params['image_type'] = 'all'
     
     try:
-        logger.info(f"Searching Pixabay for: {query} ({content_type})")
+        logger.info(f"البحث في Pixabay عن: {query} ({content_type})")
         response = requests.get(base_url, params=params, timeout=15)
         response.raise_for_status()
         data = response.json()
-        logger.info(f"Found {len(data.get('hits', []))} results")
+        logger.info(f"تم العثور على {len(data.get('hits', []))} نتيجة")
         return data
     except Exception as e:
-        logger.error(f"Pixabay API error: {e}")
+        logger.error(f"خطأ في واجهة Pixabay: {e}")
         return None
 
 def show_result(chat_id, user_id, message_id=None):
@@ -288,7 +298,7 @@ def show_result(chat_id, user_id, message_id=None):
             bot.edit_message_text(
                 chat_id=chat_id,
                 message_id=user_data[user_id]['search_message_id'],
-                text="❌ انتهت جلسة البحث، ابدأ بحثاً جديداً"
+                text="انتهت جلسة البحث، ابدأ بحثاً جديداً"
             )
         except:
             pass
@@ -303,7 +313,7 @@ def show_result(chat_id, user_id, message_id=None):
             bot.edit_message_text(
                 chat_id=chat_id,
                 message_id=user_data[user_id]['last_message_id'],
-                text="⏹️ نهاية النتائج"
+                text="نهاية النتائج"
             )
         except:
             pass
@@ -312,31 +322,35 @@ def show_result(chat_id, user_id, message_id=None):
     item = results[current_index]
     
     # بناء الرسالة
-    caption = f"🔍 البحث: {search_term}\n"
-    caption += f"📌 النتيجة {current_index+1} من {len(results)}\n"
+    caption = f"البحث: {search_term}\n"
+    caption += f"النتيجة {current_index+1} من {len(results)}\n"
     if 'tags' in item:
-        caption += f"🏷️ الوسوم: {item['tags']}\n"
+        caption += f"الوسوم: {item['tags']}\n"
     
     # بناء أزرار التنقل
     markup = InlineKeyboardMarkup()
     row_buttons = []
     if current_index > 0:
-        row_buttons.append(InlineKeyboardButton("◀ السابق", callback_data=f"nav_prev"))
+        row_buttons.append(InlineKeyboardButton("السابق", callback_data=f"nav_prev"))
     if current_index < len(results) - 1:
-        row_buttons.append(InlineKeyboardButton("التالي ▶", callback_data=f"nav_next"))
+        row_buttons.append(InlineKeyboardButton("التالي", callback_data=f"nav_next"))
     
     if row_buttons:
         markup.row(*row_buttons)
     
-    # الأزرار الجديدة مع زر "بحث جديد" أسفل زر "تحميل"
-    markup.add(InlineKeyboardButton("⬇️ تحميل", callback_data="download"))
-    markup.add(InlineKeyboardButton("🔍 بحث جديد", callback_data="search"))
+    # الأزرار مع استبدال الرموز التعبيرية
+    markup.add(InlineKeyboardButton("تحميل", callback_data="download"))
+    markup.add(InlineKeyboardButton("بحث جديد", callback_data="search"))
     
     # إرسال النتيجة
     try:
         # إذا كانت النتيجة فيديو
         if 'videos' in item:
             video_url = item['videos']['medium']['url']
+            
+            # التحقق من صحة URL
+            if not is_valid_url(video_url):
+                raise ValueError("رابط الفيديو غير صالح")
             
             # محاولة تعديل الرسالة الحالية
             if message_id:
@@ -355,7 +369,7 @@ def show_result(chat_id, user_id, message_id=None):
                     user_data[user_id]['last_message_id'] = message_id
                     return
                 except Exception as e:
-                    logger.error(f"Failed to edit video message: {e}")
+                    logger.error(f"فشل في تعديل رسالة الفيديو: {e}")
             
             # إرسال رسالة جديدة إذا لم تنجح عملية التعديل
             msg = bot.send_video(chat_id, video_url, caption=caption, reply_markup=markup)
@@ -363,14 +377,10 @@ def show_result(chat_id, user_id, message_id=None):
         else:
             # الحصول على رابط الصورة
             image_url = item.get('largeImageURL', item.get('webformatURL', ''))
-            if not image_url:
-                # إذا لم نجد صورة، ننتقل إلى النتيجة التالية
-                user_data[user_id]['current_index'] += 1
-                if user_data[user_id]['current_index'] < len(results):
-                    show_result(chat_id, user_id, message_id)
-                else:
-                    show_no_results(chat_id, user_id)
-                return
+            
+            # التحقق من صحة URL
+            if not is_valid_url(image_url):
+                raise ValueError("رابط الصورة غير صالح")
             
             # محاولة تعديل الرسالة الحالية
             if message_id:
@@ -389,13 +399,13 @@ def show_result(chat_id, user_id, message_id=None):
                     user_data[user_id]['last_message_id'] = message_id
                     return
                 except Exception as e:
-                    logger.error(f"Failed to edit photo message: {e}")
+                    logger.error(f"فشل في تعديل رسالة الصورة: {e}")
             
             # إرسال رسالة جديدة إذا لم تنجح عملية التعديل
             msg = bot.send_photo(chat_id, image_url, caption=caption, reply_markup=markup)
             user_data[user_id]['last_message_id'] = msg.message_id
     except Exception as e:
-        logger.error(f"Error in show_result: {e}")
+        logger.error(f"خطأ في عرض النتيجة: {e}")
         # المحاولة مع نتيجة أخرى
         user_data[user_id]['current_index'] += 1
         if user_data[user_id]['current_index'] < len(results):
@@ -405,17 +415,17 @@ def show_result(chat_id, user_id, message_id=None):
 
 def show_no_results(chat_id, user_id):
     markup = InlineKeyboardMarkup()
-    markup.add(InlineKeyboardButton("🔍 بحث جديد", callback_data="search"))
-    markup.add(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="back_to_main"))
+    markup.add(InlineKeyboardButton("بحث جديد", callback_data="search"))
+    markup.add(InlineKeyboardButton("القائمة الرئيسية", callback_data="back_to_main"))
     try:
         bot.edit_message_text(
             chat_id=chat_id,
             message_id=user_data[user_id]['search_message_id'],
-            text="❌ لم يتم العثور على أي نتائج، يرجى المحاولة بكلمات أخرى",
+            text="لم يتم العثور على أي نتائج، يرجى المحاولة بكلمات أخرى",
             reply_markup=markup
         )
     except Exception as e:
-        logger.error(f"Error showing no results message: {e}")
+        logger.error(f"خطأ في عرض رسالة عدم وجود نتائج: {e}")
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("nav_"))
 def navigate_results(call):
@@ -424,7 +434,7 @@ def navigate_results(call):
     action = call.data.split("_")[1]
     
     if user_id not in user_data or 'search_results' not in user_data[user_id]:
-        bot.answer_callback_query(call.id, "❌ الجلسة منتهية، ابدأ بحثاً جديداً")
+        bot.answer_callback_query(call.id, "انتهت جلسة البحث، ابدأ بحثاً جديداً")
         return
     
     # تحديث الفهرس
@@ -452,52 +462,51 @@ def download_content(call):
             reply_markup=None
         )
     except Exception as e:
-        logger.error(f"Error removing buttons: {e}")
+        logger.error(f"خطأ في ازالة الازرار: {e}")
     
     # إظهار رسالة تأكيد
-    bot.answer_callback_query(call.id, "✅ تم التحميل بنجاح!", show_alert=False)
+    bot.answer_callback_query(call.id, "تم التحميل بنجاح!", show_alert=False)
     
     # إظهار خيارات جديدة في رسالة منفصلة
     markup = InlineKeyboardMarkup()
-    markup.add(InlineKeyboardButton("🔍 بحث جديد", callback_data="search"))
-    markup.add(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="back_to_main"))
+    markup.add(InlineKeyboardButton("بحث جديد", callback_data="search"))
+    markup.add(InlineKeyboardButton("القائمة الرئيسية", callback_data="back_to_main"))
     
     bot.send_message(chat_id, "تم تحميل المحتوى بنجاح!\nماذا تريد أن تفعل الآن؟", reply_markup=markup)
 
 @bot.callback_query_handler(func=lambda call: call.data == "about_dev")
 def show_dev_info(call):
     dev_info = """
-👨‍💻 عن المطوّر @Ili8_8ill  
-مطوّر مبتدئ في عالم بوتات تيليجرام، بدأ رحلته بشغف كبير لتعلم البرمجة وصناعة أدوات ذكية تساعد المستخدمين وتضيف قيمة للمجتمعات الرقمية. يسعى لتطوير مهاراته يومًا بعد يوم من خلال التجربة، التعلم، والمشاركة في مشاريع بسيطة لكنها فعّالة.
+عن المطور @Ili8_8ill
+مطور مبتدئ في عالم بوتات تيليجرام، بدأ رحلته بشغف كبير لتعلم البرمجة وصناعة أدوات ذكية تساعد المستخدمين وتضيف قيمة للمجتمعات الرقمية. يسعى لتطوير مهاراته يومًا بعد يوم من خلال التجربة، التعلم، والمشاركة في مشاريع بسيطة لكنها فعالة.
 
-🔰 ما يميّزه في هذه المرحلة:  
+ما يميزه في هذه المرحلة:
+- حب الاستكشاف والتعلم الذاتي
+- بناء بوتات بسيطة بمهام محددة
+- استخدام أدوات مثل BotFather و Python
+- الانفتاح على النقد والتطوير المستمر
 
-• حب الاستكشاف والتعلّم الذاتي  
-• بناء بوتات بسيطة بمهام محددة  
-• استخدام أدوات مثل BotFather و Python  
-• الانفتاح على النقد والتطوير المستمر
+القنوات المرتبطة:
+@crazys7 - @AWU87
 
-📡 القنوات المرتبطة:  
-@crazys7 • @AWU87  
+رؤية المطور:
+الانطلاق من الأساسيات نحو الاحتراف، خطوة بخطوة، مع طموح لصناعة بوتات تلبي احتياجات حقيقية وتحدث فرقًا.
 
-🌱 رؤية المطوّر:  
-الانطلاق من الأساسيات نحو الاحتراف، خطوة بخطوة، مع طموح لصناعة بوتات تلبي احتياجات حقيقية وتُحدث فرقًا.
-
-📬 للتواصل: @Ili8_8ill
+للتواصل:
+تابع الحساب @Ili8_8ill
     """
     markup = InlineKeyboardMarkup()
-    markup.add(InlineKeyboardButton("🔙 رجوع", callback_data="back_to_main"))
+    markup.add(InlineKeyboardButton("رجوع", callback_data="back_to_main"))
     
     try:
         bot.edit_message_text(
             chat_id=call.message.chat.id,
             message_id=call.message.message_id,
             text=dev_info,
-            reply_markup=markup,
-            parse_mode='Markdown'
+            reply_markup=markup
         )
     except Exception as e:
-        logger.error(f"Error showing developer info: {e}")
+        logger.error(f"خطأ في عرض معلومات المطور: {e}")
 
 @bot.callback_query_handler(func=lambda call: call.data == "back_to_main")
 def return_to_main(call):
@@ -506,10 +515,10 @@ def return_to_main(call):
     show_main_menu(chat_id, user_id)
 
 if __name__ == '__main__':
-    logger.info("Bot is running...")
+    logger.info("بدء تشغيل البوت...")
     while True:
         try:
             bot.polling(none_stop=True, interval=0, timeout=20)
         except Exception as e:
-            logger.error(f"Error occurred: {e}")
-            time.sleep(15) 
+            logger.error(f"حدث خطأ: {e}")
+            time.sleep(15)

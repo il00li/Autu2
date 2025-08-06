@@ -12,17 +12,18 @@ bot = telebot.TeleBot('7968375518:AAHhFQcaIvAS48SRnVUxQ7fd_bltB9MTIBc')  # اس�
 # تخزين مؤقت لنتائج البحث
 user_data = {}
 
-# رموز تعبيرية نصية
+# رموز تعبيرية نصية عصرية
 EMOJI = {
-    'welcome': '(^_^)',
-    'design': '<*_*>',
-    'search': '🔎',
-    'next': '→',
-    'prev': '←',
-    'download': '↓',
-    'info': 'ℹ️',
-    'error': '!',
-    'icon': '*'
+    'welcome': '✨',
+    'design': '✏️',
+    'search': '🔍',
+    'next': '▷',
+    'prev': '◁',
+    'download': '⤓',
+    'info': 'ⓘ',
+    'error': '⚠️',
+    'icon': '🖼️',
+    'success': '✅'
 }
 
 # قنوات الاشتراك الإجباري
@@ -46,38 +47,41 @@ def send_welcome(message):
     
     # التحقق من الاشتراك في القنوات
     if not check_subscription(user_id):
-        channels_text = "\n".join([f"- {channel}" for channel in REQUIRED_CHANNELS])
+        channels_text = "\n".join([f"• {channel}" for channel in REQUIRED_CHANNELS])
         bot.send_message(
             user_id,
-            f"عذراً، يجب الاشتراك في القنوات التالية أولاً:\n{channels_text}\nبعد الاشتراك أرسل /start مرة أخرى"
+            f"🚀 مرحبًا بك في عالم التصميم!\n\n"
+            f"للوصول إلى جميع الميزات، يرجى الانضمام إلى قنواتنا أولاً:\n"
+            f"{channels_text}\n\n"
+            f"بعد الاشتراك، أرسل /start مرة أخرى"
         )
         return
 
     welcome_text = f"""
-    أهلاً بك مصممي المبدع {EMOJI['welcome']}
-    هذا البوت يساعدك في العثور على أفضل الأيقونات المجانية {EMOJI['icon']}
-    
-    للتأكد من حصولك على أفضل النتائج:
-    - @crazys7
-    - @AWU87
-    
-    اختر أحد الخيارات للبدء:
+    🌟 *مرحبًا بك مصممنا المبدع!* 🌟
+
+    {EMOJI['icon']} هذا البوت سيساعدك في اكتشاف آلاف الأيقونات المجانية لتصاميمك
+
+    ✨ *مميزات البوت*:
+    - البحث في مكتبة ضخمة من الأيقونات
+    - معاينة فورية قبل التحميل
+    - جودة عالية بتنسيق SVG
+
+    🛠️ *اختر أحد الخيارات*:
     """
+
+    markup = InlineKeyboardMarkup()
+    markup.row(InlineKeyboardButton(f'{EMOJI["search"]} بدء البحث', callback_data='start_search'))
+    markup.row(InlineKeyboardButton(f'{EMOJI["info"]} عن البوت', callback_data='about_bot'))
     
-    markup = InlineKeyboardMarkup(row_width=2)
-    btn_search = InlineKeyboardButton(f'بدء البحث {EMOJI["search"]}', callback_data='start_search')
-    btn_about = InlineKeyboardButton(f'عن البوت {EMOJI["info"]}', callback_data='about_bot')
-    markup.add(btn_search, btn_about)
-    
-    bot.send_message(user_id, welcome_text, reply_markup=markup)
+    bot.send_message(user_id, welcome_text, reply_markup=markup, parse_mode='Markdown')
 
 @bot.callback_query_handler(func=lambda call: True)
 def handle_callback(call):
     user_id = call.from_user.id
     
-    # التحقق من الاشتراك في القنوات
     if not check_subscription(user_id):
-        channels_text = "\n".join([f"- {channel}" for channel in REQUIRED_CHANNELS])
+        channels_text = "\n".join([f"• {channel}" for channel in REQUIRED_CHANNELS])
         bot.answer_callback_query(
             call.id,
             f"يجب الاشتراك في القنوات أولاً:\n{channels_text}",
@@ -87,132 +91,167 @@ def handle_callback(call):
     
     if call.data == 'about_bot':
         about_text = f"""
-        {EMOJI['info']} وصف البوت:
-        
-        هذا البوت هو مساعدك الشخصي للعثور على أيقونات تصميمية 
-        بجودة عالية ومجانية {EMOJI['icon']}
-        
-        يمكنك البحث عن أيقونات SVG لاستخدامها في مشاريعك.
-        
-        مطور البوت: @PIXAG7_BOT
+        {EMOJI['info']} *معلومات البوت*:
+
+        🛠️ *المميزات*:
+        - بحث سريع في +100,000 أيقونة
+        - دعم جميع المكتبات الشهيرة
+        - تحميل مباشر بتنسيق SVG
+
+        {EMOJI['design']} *كيفية الاستخدام*:
+        1. اختر 'بدء البحث'
+        2. اكتب كلمة البحث (مثل: heart, car)
+        3. تصفح النتائج
+        4. حمل الأيقونة المفضلة
+
+        📌 المطور: @PIXAG7_BOT
         """
-        bot.send_message(user_id, about_text)
+        bot.send_message(user_id, about_text, parse_mode='Markdown')
     
     elif call.data == 'start_search':
-        msg = bot.send_message(user_id, f'أرسل كلمة البحث للأيقونات {EMOJI["search"]}:')
+        msg = bot.send_message(
+            user_id,
+            f"{EMOJI['search']} *أدخل كلمة البحث*:\n"
+            f"(مثال: music, phone, arrow)\n\n"
+            f"✏️ يمكنك البحث باللغة الإنجليزية فقط",
+            parse_mode='Markdown'
+        )
         bot.register_next_step_handler(msg, process_search_query)
     
-    elif call.data.startswith('result_'):
-        data_parts = call.data.split('_')
-        result_index = int(data_parts[1])
-        action = data_parts[2]
-        
-        if user_id in user_data and 'results' in user_data[user_id]:
-            results = user_data[user_id]['results']
-            current_index = user_data[user_id].get('current_index', 0)
-            
-            if action == 'next':
-                current_index = min(current_index + 1, len(results) - 1)
-            elif action == 'prev':
-                current_index = max(current_index - 1, 0)
-            
-            user_data[user_id]['current_index'] = current_index
-            show_result(user_id, current_index)
+    elif call.data.startswith('nav_'):
+        handle_navigation(call)
     
-    elif call.data.startswith('download_'):
-        if user_id in user_data and 'results' in user_data[user_id]:
-            current_index = user_data[user_id]['current_index']
-            result = user_data[user_id]['results'][current_index]
-            
-            # تحميل الأيقونة كملف SVG
-            icon_name = result['name']
-            svg_url = f"{ICONIFY_API}/{icon_name}.svg"
-            
-            try:
-                # جلب محتوى SVG
-                response = requests.get(svg_url)
-                if response.status_code == 200:
-                    # إنشاء ملف في الذاكرة وإرساله
-                    svg_file = io.BytesIO(response.content)
-                    svg_file.name = f"{icon_name.replace(':', '-')}.svg"
-                    bot.send_document(user_id, svg_file, caption=f"الأيقونة: {icon_name}")
-                else:
-                    bot.send_message(user_id, f"تعذر تحميل الأيقونة {EMOJI['error']}")
-            except Exception as e:
-                print(f"Download error: {e}")
-                bot.send_message(user_id, f"حدث خطأ في التحميل {EMOJI['error']}")
+    elif call.data.startswith('dl_'):
+        handle_download(call)
 
-def process_search_query(message):
-    user_id = message.from_user.id
-    query = message.text
+def handle_navigation(call):
+    user_id = call.from_user.id
+    data = call.data.split('_')
+    action = data[1]
+    current_index = int(data[2])
     
-    # التحقق من الاشتراك في القنوات
-    if not check_subscription(user_id):
-        channels_text = "\n".join([f"- {channel}" for channel in REQUIRED_CHANNELS])
-        bot.send_message(
-            user_id,
-            f"عذراً، يجب الاشتراك في القنوات التالية أولاً:\n{channels_text}"
-        )
-        return
-    
-    # البحث عن الأيقونات
-    results = search_icons(query)
-    
-    if results:
-        user_data[user_id] = {
-            'results': results,
-            'current_index': 0
-        }
-        show_result(user_id, 0)
-    else:
-        bot.send_message(user_id, f'لم أجد نتائج {EMOJI["error"]}')
-
-def show_result(user_id, index):
     if user_id not in user_data or 'results' not in user_data[user_id]:
         return
     
     results = user_data[user_id]['results']
+    new_index = current_index
+    
+    if action == 'next':
+        new_index = min(current_index + 1, len(results) - 1)
+    elif action == 'prev':
+        new_index = max(current_index - 1, 0)
+    
+    user_data[user_id]['current_index'] = new_index
+    show_result(user_id, new_index)
+
+def handle_download(call):
+    user_id = call.from_user.id
+    index = int(call.data.split('_')[1])
+    
+    if user_id not in user_data or 'results' not in user_data[user_id]:
+        return
+    
+    result = user_data[user_id]['results'][index]
+    icon_name = result['name']
+    
+    try:
+        svg_url = f"{ICONIFY_API}/{icon_name}.svg"
+        response = requests.get(svg_url)
+        
+        if response.status_code == 200:
+            svg_file = io.BytesIO(response.content)
+            svg_file.name = f"{icon_name.replace(':', '-')}.svg"
+            
+            bot.send_document(
+                user_id,
+                svg_file,
+                caption=f"{EMOJI['success']} تم تحميل الأيقونة: *{icon_name}*",
+                parse_mode='Markdown'
+            )
+        else:
+            bot.answer_callback_query(call.id, "⚠️ تعذر تحميل الأيقونة", show_alert=True)
+    except Exception as e:
+        print(f"Download error: {e}")
+        bot.answer_callback_query(call.id, "❌ حدث خطأ أثناء التحميل", show_alert=True)
+
+def process_search_query(message):
+    user_id = message.from_user.id
+    query = message.text.strip()
+    
+    if not query:
+        bot.send_message(user_id, "⚠️ يرجى إدخال كلمة البحث")
+        return
+    
+    bot.send_chat_action(user_id, 'typing')
+    
+    results = search_icons(query)
+    
+    if results:
+        user_data[user_id] = {'results': results, 'current_index': 0}
+        show_result(user_id, 0)
+    else:
+        bot.send_message(
+            user_id,
+            f"{EMOJI['error']} *لم يتم العثور على نتائج*\n\n"
+            f"جرب كلمات بحث أخرى مثل:\n"
+            f"• {EMOJI['search']} home\n"
+            f"• {EMOJI['search']} car\n"
+            f"• {EMOJI['search']} weather",
+            parse_mode='Markdown'
+        )
+
+def show_result(user_id, index):
+    results = user_data[user_id]['results']
     result = results[index]
     
     # إنشاء واجهة النتائج
-    caption = f"النتيجة {index+1} من {len(results)}\n"
-    caption += f"اسم الأيقونة: {result['name']}\n"
-    caption += f"المكتبة: {result.get('provider', 'غير معروف')}"
+    caption = (
+        f"{EMOJI['icon']} *النتيجة {index+1} من {len(results)}*\n\n"
+        f"📛 *الاسم*: `{result['name']}`\n"
+        f"📚 *المكتبة*: {result.get('provider', 'غير معروف')}\n\n"
+        f"استخدم الأزرار للتنقل أو التحميل"
+    )
     
-    # أزرار التنقل والتحميل
-    markup = InlineKeyboardMarkup(row_width=3)
-    btn_prev = InlineKeyboardButton(f'{EMOJI["prev"]} سابق', callback_data=f'result_{index}_prev')
-    btn_next = InlineKeyboardButton(f'تالي {EMOJI["next"]}', callback_data=f'result_{index}_next')
-    btn_download = InlineKeyboardButton(f'تحميل SVG {EMOJI["download"]}', callback_data=f'download_{index}')
+    # إنشاء الأزرار بشكل عمودي
+    markup = InlineKeyboardMarkup()
+    markup.row(InlineKeyboardButton(f"{EMOJI['prev']} السابق", callback_data=f"nav_prev_{index}"))
+    markup.row(InlineKeyboardButton(f"{EMOJI['download']} تحميل SVG", callback_data=f"dl_{index}"))
+    markup.row(InlineKeyboardButton(f"{EMOJI['next']} التالي", callback_data=f"nav_next_{index}"))
     
-    markup.add(btn_prev, btn_download, btn_next)
-    
-    # إرسال رابط الصورة المصغرة كرسالة
+    # إرسال الصورة المصغرة
     try:
-        # استخدام خدمة تحويل SVG إلى PNG للعرض
-        png_url = f"https://api.iconify.design/{result['name']}.png?width=256&height=256"
-        bot.send_photo(user_id, png_url, caption=caption, reply_markup=markup)
+        png_url = f"https://api.iconify.design/{result['name']}.png?width=400&height=400"
+        bot.send_photo(
+            user_id,
+            png_url,
+            caption=caption,
+            reply_markup=markup,
+            parse_mode='Markdown'
+        )
     except Exception as e:
-        print(f"Error sending preview: {e}")
-        # إذا فشل إرسال الصورة، إرسال الرسالة فقط مع الأزرار
-        bot.send_message(user_id, caption, reply_markup=markup)
+        print(f"Preview error: {e}")
+        bot.send_message(
+            user_id,
+            caption,
+            reply_markup=markup,
+            parse_mode='Markdown'
+        )
 
 def search_icons(query):
-    """البحث عن الأيقونات باستخدام Iconify API"""
     try:
-        url = f"{ICONIFY_API}/search?query={quote(query)}&limit=20"
-        response = requests.get(url)
+        url = f"{ICONIFY_API}/search?query={quote(query)}&limit=10"
+        response = requests.get(url, timeout=10)
         
         if response.status_code == 200:
             data = response.json()
             return data.get('icons', [])
-        else:
-            print(f"Iconify API Error: {response.status_code} - {response.text}")
-            return []
+        
+        print(f"API Error: {response.status_code}")
+        return []
     except Exception as e:
-        print(f"API Exception: {e}")
+        print(f"Search error: {e}")
         return []
 
 if __name__ == '__main__':
-    print("Bot is running...")
+    print("🌟 البوت يعمل الآن...")
     bot.polling() 

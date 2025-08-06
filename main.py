@@ -318,53 +318,15 @@ def show_result(chat_id, user_id):
         # إذا كانت النتيجة فيديو
         if 'videos' in item:
             video_url = item['videos']['medium']['url']
+            
             # إذا كانت هناك رسالة وسائط سابقة، نقوم بتعديلها
             if 'last_message_id' in user_data[user_id]:
                 try:
-                    # إنشاء وسائط فيديو جديدة
-                    media = telebot.types.InputMediaVideo(media=video_url, caption=caption)
                     # تعديل الرسالة الحالية
                     bot.edit_message_media(
                         chat_id=chat_id,
                         message_id=user_data[user_id]['last_message_id'],
-                        media=media,
-                        reply_markup=markup
-                    )
-                    # تعديل التسمية التوضيحية (قد لا يتم تعديلها مع الوسائط في بعض الإصدارات)
-                    bot.edit_message_caption(
-                        chat_id=chat_id,
-                        message_id=user_data[user_id]['last_message_id'],
-                        caption=caption,
-                        reply_markup=markup
-                    )
-                except:
-                    # في حال فشل التعديل، نرسل رسالة جديدة
-                    msg = bot.send_video(chat_id, video_url, caption=caption, reply_markup=markup)
-                    user_data[user_id]['last_message_id'] = msg.message_id
-            else:
-                msg = bot.send_video(chat_id, video_url, caption=caption, reply_markup=markup)
-                user_data[user_id]['last_message_id'] = msg.message_id
-        else:
-            # الحصول على رابط الصورة (نسخة عالية الجودة إذا متوفرة)
-            image_url = item.get('largeImageURL', item.get('webformatURL', ''))
-            if not image_url:
-                # إذا لم نجد صورة، ننتقل إلى النتيجة التالية
-                user_data[user_id]['current_index'] += 1
-                if user_data[user_id]['current_index'] < len(results):
-                    show_result(chat_id, user_id)
-                else:
-                    show_no_results(chat_id, user_id)
-                return
-            # إذا كانت هناك رسالة وسائط سابقة، نقوم بتعديلها
-            if 'last_message_id' in user_data[user_id]:
-                try:
-                    # إنشاء وسائط صورة جديدة
-                    media = telebot.types.InputMediaPhoto(media=image_url, caption=caption)
-                    # تعديل الرسالة الحالية
-                    bot.edit_message_media(
-                        chat_id=chat_id,
-                        message_id=user_data[user_id]['last_message_id'],
-                        media=media,
+                        media=telebot.types.InputMediaVideo(media=video_url),
                         reply_markup=markup
                     )
                     # تعديل التسمية التوضيحية
@@ -374,10 +336,50 @@ def show_result(chat_id, user_id):
                         caption=caption,
                         reply_markup=markup
                     )
-                except:
+                except Exception as e:
+                    print(f"Failed to edit video message: {e}")
+                    # في حال فشل التعديل، نرسل رسالة جديدة
+                    msg = bot.send_video(chat_id, video_url, caption=caption, reply_markup=markup)
+                    user_data[user_id]['last_message_id'] = msg.message_id
+            else:
+                # إرسال رسالة جديدة إذا لم تكن هناك رسالة سابقة
+                msg = bot.send_video(chat_id, video_url, caption=caption, reply_markup=markup)
+                user_data[user_id]['last_message_id'] = msg.message_id
+        else:
+            # الحصول على رابط الصورة
+            image_url = item.get('largeImageURL', item.get('webformatURL', ''))
+            if not image_url:
+                # إذا لم نجد صورة، ننتقل إلى النتيجة التالية
+                user_data[user_id]['current_index'] += 1
+                if user_data[user_id]['current_index'] < len(results):
+                    show_result(chat_id, user_id)
+                else:
+                    show_no_results(chat_id, user_id)
+                return
+            
+            # إذا كانت هناك رسالة وسائط سابقة، نقوم بتعديلها
+            if 'last_message_id' in user_data[user_id]:
+                try:
+                    # تعديل الرسالة الحالية
+                    bot.edit_message_media(
+                        chat_id=chat_id,
+                        message_id=user_data[user_id]['last_message_id'],
+                        media=telebot.types.InputMediaPhoto(media=image_url),
+                        reply_markup=markup
+                    )
+                    # تعديل التسمية التوضيحية
+                    bot.edit_message_caption(
+                        chat_id=chat_id,
+                        message_id=user_data[user_id]['last_message_id'],
+                        caption=caption,
+                        reply_markup=markup
+                    )
+                except Exception as e:
+                    print(f"Failed to edit photo message: {e}")
                     msg = bot.send_photo(chat_id, image_url, caption=caption, reply_markup=markup)
                     user_data[user_id]['last_message_id'] = msg.message_id
             else:
+                # إرسال رسالة جديدة إذا لم تكن هناك رسالة سابقة
                 msg = bot.send_photo(chat_id, image_url, caption=caption, reply_markup=markup)
                 user_data[user_id]['last_message_id'] = msg.message_id
     except Exception as e:
@@ -422,7 +424,7 @@ def navigate_results(call):
     # حفظ معرف الرسالة الحالية (التي نضغط عليها)
     user_data[user_id]['last_message_id'] = call.message.message_id
     
-    # عرض النتيجة الجديدة
+    # عرض النتيجة الجديدة في نفس الرسالة
     show_result(chat_id, user_id)
 
 @bot.callback_query_handler(func=lambda call: call.data == "download")
@@ -498,4 +500,4 @@ if __name__ == '__main__':
             bot.polling(none_stop=True, interval=0, timeout=20)
         except Exception as e:
             print(f"Error occurred: {e}")
-            time.sleep(15) 
+            time.sleep(15)

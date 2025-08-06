@@ -3,8 +3,8 @@ from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 import requests
 import time
 import logging
-import re
 import urllib.parse
+from flask import Flask, request, abort
 
 # تهيئة نظام التسجيل
 logging.basicConfig(
@@ -13,10 +13,12 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-TOKEN = '8373741818:AAEd93FxG8_syzqOY0Hin_IefrGn6ch-YCE'
+TOKEN = '7742801098:AAFD3jwXm61XVBr_IkKxgoVDUlJAO35CERU'
 PIXABAY_API_KEY = '51444506-bffefcaf12816bd85a20222d1'
 ADMIN_ID = 7251748706  # معرف المدير
+WEBHOOK_URL = 'https://autu2.onrender.com/webhook'  # تأكد من تطابق هذا مع عنوان URL الخاص بك
 
+app = Flask(__name__)
 bot = telebot.TeleBot(TOKEN)
 
 # قنوات الاشتراك الإجباري
@@ -33,6 +35,27 @@ def is_valid_url(url):
         return all([result.scheme, result.netloc])
     except:
         return False
+
+def set_webhook():
+    """تعيين ويب هوك للبوت"""
+    try:
+        bot.remove_webhook()
+        time.sleep(1)
+        bot.set_webhook(url=WEBHOOK_URL)
+        logger.info("تم تعيين ويب هوك بنجاح")
+    except Exception as e:
+        logger.error(f"خطأ في تعيين ويب هوك: {e}")
+
+@app.route('/webhook', methods=['POST'])
+def webhook():
+    """معالجة التحديثات الواردة من تلجرام"""
+    if request.headers.get('content-type') == 'application/json':
+        json_string = request.get_data().decode('utf-8')
+        update = telebot.types.Update.de_json(json_string)
+        bot.process_new_updates([update])
+        return ''
+    else:
+        abort(403)
 
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
@@ -340,6 +363,7 @@ def show_result(chat_id, user_id, message_id=None):
     
     # الأزرار مع استبدال الرموز التعبيرية
     markup.add(InlineKeyboardButton("تحميل", callback_data="download"))
+    markup.add(InlineKeyboardButton("بحث جديد", callback_data="search"))
     
     # إرسال النتيجة
     try:
@@ -515,9 +539,5 @@ def return_to_main(call):
 
 if __name__ == '__main__':
     logger.info("بدء تشغيل البوت...")
-    while True:
-        try:
-            bot.polling(none_stop=True, interval=0, timeout=20)
-        except Exception as e:
-            logger.error(f"حدث خطأ: {e}")
-            time.sleep(15)
+    set_webhook()
+    app.run(host='0.0.0.0', port=10000)

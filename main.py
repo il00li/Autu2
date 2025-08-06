@@ -3,19 +3,25 @@ from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 import requests
 import logging
 from urllib.parse import quote
+import time
 
-# تهيئة التسجيل
+# تكوين السجلات
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    filename='bot.log'
 )
 
-# بيانات API من Flaticon
-FLATICON_API_KEY = '92d3add3fbed4ab7a1dcb2cc1cb55a3f'  # استبدل بمفتاحك الفعلي
+# إعدادات API
+FLATICON_API_KEY = '92d3add3fbed4ab7a1dcb2cc1cb55a3f'  # استبدله بمفتاحك الصحيح
 FLATICON_API_URL = "https://api.flaticon.com/v3"
 
-# تهيئة البوت
-bot = telebot.TeleBot('7968375518:AAHhFQcaIvAS48SRnVUxQ7fd_bltB9MTIBc')  # استبدل بتوكن البوت الصحيح
+# إعداد البوت
+try:
+    bot = telebot.TeleBot('7968375518:AAHhFQcaIvAS48SRnVUxQ7fd_bltB9MTIBc')  # استبدل بتوكن البوت
+except Exception as e:
+    logging.critical(f"فشل تهيئة البوت: {e}")
+    exit()
 
 # تخزين مؤقت لنتائج البحث
 user_data = {}
@@ -36,12 +42,13 @@ EMOJI = {
 # قنوات الاشتراك الإجباري
 REQUIRED_CHANNELS = ['@crazys7', '@AWU87']
 
-# جلسة API مع الهيدرات المطلوبة
+# جلسة API محسنة
 session = requests.Session()
 session.headers.update({
-    "Accept": "application/json",
     "Authorization": f"Bearer {FLATICON_API_KEY}",
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+    "Accept": "application/json",
+    "Content-Type": "application/json",
+    "User-Agent": "FlaticonBot/2.0"
 })
 
 def check_subscription(user_id):
@@ -73,17 +80,22 @@ def send_welcome(message):
         أهلاً بك في بوت الأيقونات الاحترافية {EMOJI['welcome']}
         هذا البوت يتيح لك البحث عن أيقونات Flaticon وتحميلها {EMOJI['icon']}
         
-        القنوات الرسمية:
+        ✨ الميزات:
+        - بحث متقدم في ملايين الأيقونات
+        - معاينة قبل التحميل
+        - تحميل مباشر بصيغة SVG
+        
+        📢 القنوات الرسمية:
         - @crazys7
         - @AWU87
         
-        اختر أحد الخيارات للبدء:
+        اختر أحد الخيارات:
         """
         
         markup = InlineKeyboardMarkup(row_width=2)
-        btn_search = InlineKeyboardButton(f'بدء البحث {EMOJI["search"]}', callback_data='start_search')
-        btn_about = InlineKeyboardButton(f'عن البوت {EMOJI["info"]}', callback_data='about_bot')
-        markup.add(btn_search, btn_about)
+        btn_search = InlineKeyboardButton(f'بحث عن أيقونة {EMOJI["search"]}', callback_data='start_search')
+        btn_help = InlineKeyboardButton(f'مساعدة {EMOJI["info"]}', callback_data='show_help')
+        markup.add(btn_search, btn_help)
         
         bot.send_message(user_id, welcome_text, reply_markup=markup)
     except Exception as e:
@@ -94,112 +106,70 @@ def handle_callback(call):
     try:
         user_id = call.from_user.id
         
-        if not check_subscription(user_id):
-            channels_text = "\n".join([f"- {channel}" for channel in REQUIRED_CHANNELS])
-            bot.answer_callback_query(
-                call.id,
-                f"يجب الاشتراك في القنوات أولاً:\n{channels_text}",
-                show_alert=True
-            )
-            return
-        
-        if call.data == 'about_bot':
-            about_text = f"""
-            {EMOJI['info']} وصف البوت:
+        if call.data == 'start_search':
+            msg = bot.send_message(user_id, f"أدخل كلمة البحث للأيقونات {EMOJI['search']}:")
+            bot.register_next_step_handler(msg, process_search)
             
-            بوت الأيقونات الاحترافية {EMOJI['icon']}
-            يعمل باستخدام واجهة Flaticon API
+        elif call.data == 'show_help':
+            help_text = f"""
+            {EMOJI['info']} دليل استخدام البوت:
             
-            الميزات:
-            - بحث متقدم في ملايين الأيقونات
-            - تحميل مباشر بصيغة SVG
-            - واجهة مستخدم سهلة
+            1. أرسل /start للبدء
+            2. اختر 'بحث عن أيقونة'
+            3. أدخل كلمة البحث (مثال: heart, phone)
+            4. تصفح النتائج واستخدم الأزرار للتنقل
+            5. اضغط 'تحميل' للحصول على الأيقونة
             
-            المطور: @PIXAG7_BOT
+            📌 ملاحظات:
+            - يمكنك البحث باللغة الإنجليزية فقط
+            - الحد الأقصى للنتائج: 10 أيقونات
+            - الدعم الفني: @PIXAG7_BOT
             """
-            bot.send_message(user_id, about_text)
-        
-        elif call.data == 'start_search':
-            msg = bot.send_message(user_id, f'أدخل كلمة البحث للأيقونات {EMOJI["search"]}:')
-            bot.register_next_step_handler(msg, process_search_query)
-        
-        elif call.data.startswith('result_'):
-            data_parts = call.data.split('_')
-            result_index = int(data_parts[1])
-            action = data_parts[2]
+            bot.send_message(user_id, help_text)
             
-            if user_id in user_data and 'results' in user_data[user_id]:
-                results = user_data[user_id]['results']
-                current_index = user_data[user_id].get('current_index', 0)
-                
-                if action == 'next':
-                    current_index = min(current_index + 1, len(results) - 1)
-                elif action == 'prev':
-                    current_index = max(current_index - 1, 0)
-                
-                user_data[user_id]['current_index'] = current_index
-                show_result(user_id, current_index)
-        
+        elif call.data.startswith('page_'):
+            page = int(call.data.split('_')[1])
+            show_results(user_id, page)
+            
         elif call.data.startswith('download_'):
-            if user_id in user_data and 'results' in user_data[user_id]:
-                current_index = user_data[user_id]['current_index']
-                result = user_data[user_id]['results'][current_index]
-                
-                download_icon(user_id, result['id'])
+            icon_id = call.data.split('_')[1]
+            download_icon(user_id, icon_id)
+            
     except Exception as e:
         logging.error(f"خطأ في handle_callback: {e}")
 
-def process_search_query(message):
+def process_search(message):
     try:
         user_id = message.from_user.id
         query = message.text.strip()
         
-        if not query:
-            bot.send_message(user_id, f"الرجاء إدخال كلمة بحث صحيحة {EMOJI['error']}")
+        if len(query) < 2:
+            bot.send_message(user_id, f"الكلمة قصيرة جداً {EMOJI['error']}")
             return
+            
+        bot.send_message(user_id, f"🔍 جاري البحث عن '{query}'...")
         
-        bot.send_message(user_id, f"جاري البحث عن أيقونات لـ '{query}'...")
+        # البحث مع إضافة تأخير لتجنب rate limits
+        time.sleep(1)
+        results = search_icons(query)
         
-        results = search_flaticon(query)
-        
-        if results:
-            user_data[user_id] = {
-                'results': results,
-                'current_index': 0
-            }
-            show_result(user_id, 0)
-        else:
-            bot.send_message(user_id, f"لم يتم العثور على نتائج {EMOJI['error']}")
-    except Exception as e:
-        logging.error(f"خطأ في process_search_query: {e}")
-
-def show_result(user_id, index):
-    try:
-        if user_id not in user_data or 'results' not in user_data[user_id]:
+        if not results or len(results) == 0:
+            bot.send_message(user_id, f"⚠️ لم أجد نتائج، حاول بكلمة أخرى")
             return
+            
+        user_data[user_id] = {
+            'query': query,
+            'results': results,
+            'page': 0
+        }
         
-        results = user_data[user_id]['results']
-        result = results[index]
+        show_results(user_id, 0)
         
-        caption = f"النتيجة {index+1} من {len(results)}\n"
-        caption += f"اسم الأيقونة: {result['name']}\n"
-        caption += f"المكتبة: {result['library']}"
-        
-        markup = InlineKeyboardMarkup(row_width=3)
-        btn_prev = InlineKeyboardButton(f'{EMOJI["prev"]} سابق', callback_data=f'result_{index}_prev')
-        btn_next = InlineKeyboardButton(f'تالي {EMOJI["next"]}', callback_data=f'result_{index}_next')
-        btn_download = InlineKeyboardButton(f'تحميل SVG {EMOJI["download"]}', callback_data=f'download_{index}')
-        
-        markup.add(btn_prev, btn_download, btn_next)
-        
-        if result.get('preview_url'):
-            bot.send_photo(user_id, result['preview_url'], caption=caption, reply_markup=markup)
-        else:
-            bot.send_message(user_id, caption, reply_markup=markup)
     except Exception as e:
-        logging.error(f"خطأ في show_result: {e}")
+        logging.error(f"خطأ في process_search: {e}")
+        bot.send_message(user_id, "حدث خطأ أثناء البحث، حاول لاحقاً")
 
-def search_flaticon(query):
+def search_icons(query):
     """البحث عن الأيقونات في Flaticon API"""
     try:
         url = f"{FLATICON_API_URL}/search"
@@ -209,9 +179,8 @@ def search_flaticon(query):
             'type': 'all'
         }
         
-        response = session.get(url, params=params, timeout=10)
+        response = session.get(url, params=params, timeout=15)
         logging.info(f"API Request: {response.url}")
-        logging.info(f"API Status: {response.status_code}")
         
         if response.status_code == 200:
             data = response.json()
@@ -219,41 +188,100 @@ def search_flaticon(query):
                 'id': item['id'],
                 'name': item.get('name', 'بدون اسم'),
                 'library': item.get('library', {}).get('name', 'غير معروف'),
-                'preview_url': item.get('images', {}).get('128', '')
+                'preview': item.get('images', {}).get('128', ''),
+                'download_url': f"https://api.flaticon.com/v3/item/{item['id']}/download?format=svg"
             } for item in data.get('data', [])]
         else:
             logging.error(f"خطأ API: {response.status_code} - {response.text}")
             return []
     except Exception as e:
-        logging.error(f"خطأ في search_flaticon: {e}")
+        logging.error(f"خطأ في search_icons: {e}")
         return []
 
-def download_icon(user_id, icon_id):
-    """تحميل الأيقونة وإرسالها للمستخدم"""
+def show_results(user_id, page):
     try:
-        url = f"{FLATICON_API_URL}/item/{icon_id}/download"
-        params = {'format': 'svg'}
-        
-        response = session.get(url, params=params, timeout=10)
-        
-        if response.status_code == 200:
-            data = response.json()
-            download_url = data.get('data', {}).get('svg', {}).get('url', '')
+        if user_id not in user_data:
+            return
             
-            if download_url:
-                bot.send_document(user_id, download_url, caption="تم التحميل بنجاح")
+        data = user_data[user_id]
+        results = data['results']
+        total_pages = (len(results) + 2) // 3  # 3 نتائج لكل صفحة
+        
+        if page < 0 or page >= total_pages:
+            return
+            
+        user_data[user_id]['page'] = page
+        start_idx = page * 3
+        end_idx = min(start_idx + 3, len(results))
+        
+        for i in range(start_idx, end_idx):
+            icon = results[i]
+            caption = f"{icon['name']}\nالمكتبة: {icon['library']}"
+            
+            markup = InlineKeyboardMarkup()
+            btn_download = InlineKeyboardButton(
+                f"تحميل SVG {EMOJI['download']}", 
+                callback_data=f'download_{icon["id"]}'
+            )
+            markup.add(btn_download)
+            
+            if icon['preview']:
+                bot.send_photo(user_id, icon['preview'], caption=caption, reply_markup=markup)
             else:
-                bot.send_message(user_id, f"خطأ في الحصول على رابط التحميل {EMOJI['error']}")
+                bot.send_message(user_id, caption, reply_markup=markup)
+        
+        # أزرار التنقل بين الصفحات
+        if total_pages > 1:
+            markup = InlineKeyboardMarkup(row_width=3)
+            buttons = []
+            
+            if page > 0:
+                buttons.append(InlineKeyboardButton(f"{EMOJI['prev']} السابق", callback_data=f'page_{page-1}'))
+            
+            buttons.append(InlineKeyboardButton(f"الصفحة {page+1}/{total_pages}", callback_data='_'))
+            
+            if page < total_pages - 1:
+                buttons.append(InlineKeyboardButton(f"التالي {EMOJI['next']}", callback_data=f'page_{page+1}'))
+            
+            markup.add(*buttons)
+            bot.send_message(user_id, "تصفح النتائج:", reply_markup=markup)
+            
+    except Exception as e:
+        logging.error(f"خطأ في show_results: {e}")
+
+def download_icon(user_id, icon_id):
+    try:
+        bot.send_message(user_id, "⏳ جاري تحضير الأيقونة...")
+        
+        # البحث عن الأيقونة في النتائج المحفوظة
+        icon_data = None
+        if user_id in user_data:
+            for icon in user_data[user_id]['results']:
+                if icon['id'] == icon_id:
+                    icon_data = icon
+                    break
+        
+        if icon_data:
+            bot.send_document(
+                user_id,
+                icon_data['download_url'],
+                caption=f"تم التحميل: {icon_data['name']}"
+            )
         else:
-            bot.send_message(user_id, f"خطأ في تحميل الأيقونة {EMOJI['error']}")
-            logging.error(f"خطأ تحميل: {response.status_code} - {response.text}")
+            bot.send_message(user_id, "⚠️ لم أتمكن من العثور على الأيقونة المطلوبة")
+            
     except Exception as e:
         logging.error(f"خطأ في download_icon: {e}")
-        bot.send_message(user_id, f"حدث خطأ أثناء التحميل {EMOJI['error']}")
+        bot.send_message(user_id, "❌ حدث خطأ أثناء التحميل، حاول مرة أخرى")
 
 if __name__ == '__main__':
     try:
-        logging.info("جارٍ تشغيل البوت...")
-        bot.polling(none_stop=True, interval=3, timeout=60)
+        logging.info("🚀 بدء تشغيل البوت...")
+        bot.infinity_polling(timeout=60, long_polling_timeout=30)
+    except KeyboardInterrupt:
+        logging.info("⏹ إيقاف البوت...")
     except Exception as e:
-        logging.critical(f"انهيار البوت: {e}")
+        logging.critical(f"🔥 خطأ غير متوقع: {e}")
+    finally:
+        session.close()
+        logging.info("✅ تم إغلاق الجلسات") 

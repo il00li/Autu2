@@ -2,6 +2,14 @@ import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 import requests
 import time
+import logging
+
+# تهيئة نظام التسجيل
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
+logger = logging.getLogger(__name__)
 
 TOKEN = '8373741818:AAHca5FsSiWwQiNFXL3CLeeFLtbOiJiQeJk'
 PIXABAY_API_KEY = '51444506-bffefcaf12816bd85a20222d1'
@@ -49,7 +57,7 @@ def notify_admin(user_id, username):
         message += f"👤 Username: {username}"
         bot.send_message(ADMIN_ID, message)
     except Exception as e:
-        print(f"Error notifying admin: {e}")
+        logger.error(f"Error notifying admin: {e}")
 
 def check_subscription(user_id):
     not_subscribed = []
@@ -60,7 +68,7 @@ def check_subscription(user_id):
             if chat_member.status not in ['member', 'administrator', 'creator']:
                 not_subscribed.append(channel)
         except Exception as e:
-            print(f"Error checking subscription: {e}")
+            logger.error(f"Error checking subscription: {e}")
             not_subscribed.append(channel)
     return not_subscribed
 
@@ -85,7 +93,8 @@ def show_main_menu(chat_id, user_id):
                 reply_markup=markup
             )
             return
-        except:
+        except Exception as e:
+            logger.error(f"Error editing main menu: {e}")
             # إذا فشل التعديل، نرسل رسالة جديدة
             msg = bot.send_message(chat_id, welcome_msg, reply_markup=markup)
             user_data[user_id]['main_message_id'] = msg.message_id
@@ -103,12 +112,15 @@ def verify_subscription(call):
     if not_subscribed:
         markup = InlineKeyboardMarkup()
         markup.add(InlineKeyboardButton("تحقق من الاشتراك", callback_data="check_subscription"))
-        bot.edit_message_text(
-            chat_id=chat_id,
-            message_id=call.message.message_id,
-            text="⛔ يجب الاشتراك في القنوات التالية أولاً:\n" + "\n".join(not_subscribed),
-            reply_markup=markup
-        )
+        try:
+            bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=call.message.message_id,
+                text="⛔ يجب الاشتراك في القنوات التالية أولاً:\n" + "\n".join(not_subscribed),
+                reply_markup=markup
+            )
+        except Exception as e:
+            logger.error(f"Error editing subscription message: {e}")
     else:
         show_main_menu(chat_id, user_id)
 
@@ -134,12 +146,15 @@ def show_content_types(call):
     markup.add(InlineKeyboardButton("Videos", callback_data="type_video"))
     markup.add(InlineKeyboardButton("All", callback_data="type_all"))
     
-    bot.edit_message_text(
-        chat_id=chat_id,
-        message_id=call.message.message_id,
-        text="اختر نوع المحتوى:",
-        reply_markup=markup
-    )
+    try:
+        bot.edit_message_text(
+            chat_id=chat_id,
+            message_id=call.message.message_id,
+            text="اختر نوع المحتوى:",
+            reply_markup=markup
+        )
+    except Exception as e:
+        logger.error(f"Error showing content types: {e}")
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("type_"))
 def request_search_term(call):
@@ -156,12 +171,15 @@ def request_search_term(call):
     markup = InlineKeyboardMarkup()
     markup.add(InlineKeyboardButton("إلغاء البحث", callback_data="cancel_search"))
     
-    bot.edit_message_text(
-        chat_id=chat_id,
-        message_id=call.message.message_id,
-        text="🔍 أرسل كلمة البحث باللغة الإنجليزية:",
-        reply_markup=markup
-    )
+    try:
+        bot.edit_message_text(
+            chat_id=chat_id,
+            message_id=call.message.message_id,
+            text="🔍 أرسل كلمة البحث باللغة الإنجليزية:",
+            reply_markup=markup
+        )
+    except Exception as e:
+        logger.error(f"Error requesting search term: {e}")
     
     # حفظ معرف الرسالة للاستخدام لاحقاً
     user_data[user_id]['search_message_id'] = call.message.message_id
@@ -181,8 +199,8 @@ def process_search_term(message, user_id):
     # حذف رسالة إدخال المستخدم
     try:
         bot.delete_message(chat_id, message.message_id)
-    except:
-        pass
+    except Exception as e:
+        logger.error(f"Error deleting user input: {e}")
     
     # استرجاع نوع المحتوى
     if user_id not in user_data or 'content_type' not in user_data[user_id]:
@@ -199,8 +217,8 @@ def process_search_term(message, user_id):
             text="🔍 جاري البحث في قاعدة البيانات...",
             reply_markup=None
         )
-    except:
-        pass
+    except Exception as e:
+        logger.error(f"Error showing loading message: {e}")
     
     # البحث في Pixabay
     results = search_pixabay(search_term, content_type)
@@ -218,8 +236,8 @@ def process_search_term(message, user_id):
                 text=f"⚠️ لم يتم العثور على نتائج لكلمة: {search_term}\nيرجى المحاولة بكلمات أخرى",
                 reply_markup=markup
             )
-        except:
-            pass
+        except Exception as e:
+            logger.error(f"Error showing no results: {e}")
         return
     
     # حفظ النتائج
@@ -227,8 +245,8 @@ def process_search_term(message, user_id):
     user_data[user_id]['search_results'] = results['hits']
     user_data[user_id]['current_index'] = 0
     
-    # عرض النتيجة الأولى
-    show_result(chat_id, user_id)
+    # عرض النتيجة الأولى في نفس رسالة "جاري البحث"
+    show_result(chat_id, user_id, message_id=user_data[user_id]['search_message_id'])
 
 def search_pixabay(query, content_type):
     base_url = "https://pixabay.com/api/"
@@ -254,17 +272,17 @@ def search_pixabay(query, content_type):
         params['image_type'] = 'all'
     
     try:
-        print(f"Searching Pixabay for: {query} ({content_type})")
+        logger.info(f"Searching Pixabay for: {query} ({content_type})")
         response = requests.get(base_url, params=params, timeout=15)
         response.raise_for_status()
         data = response.json()
-        print(f"Found {len(data.get('hits', []))} results")
+        logger.info(f"Found {len(data.get('hits', []))} results")
         return data
     except Exception as e:
-        print(f"Pixabay API error: {e}")
+        logger.error(f"Pixabay API error: {e}")
         return None
 
-def show_result(chat_id, user_id):
+def show_result(chat_id, user_id, message_id=None):
     if user_id not in user_data or 'search_results' not in user_data[user_id]:
         try:
             bot.edit_message_text(
@@ -310,6 +328,7 @@ def show_result(chat_id, user_id):
     if row_buttons:
         markup.row(*row_buttons)
     
+    # الأزرار الجديدة مع زر "بحث جديد" أسفل زر "تحميل"
     markup.add(InlineKeyboardButton("⬇️ تحميل", callback_data="download"))
     markup.add(InlineKeyboardButton("🔍 بحث جديد", callback_data="search"))
     
@@ -319,32 +338,28 @@ def show_result(chat_id, user_id):
         if 'videos' in item:
             video_url = item['videos']['medium']['url']
             
-            # إذا كانت هناك رسالة وسائط سابقة، نقوم بتعديلها
-            if 'last_message_id' in user_data[user_id]:
+            # محاولة تعديل الرسالة الحالية
+            if message_id:
                 try:
-                    # تعديل الرسالة الحالية
+                    # تعديل الوسائط والتسمية التوضيحية معاً
                     bot.edit_message_media(
                         chat_id=chat_id,
-                        message_id=user_data[user_id]['last_message_id'],
-                        media=telebot.types.InputMediaVideo(media=video_url),
+                        message_id=message_id,
+                        media=telebot.types.InputMediaVideo(
+                            media=video_url,
+                            caption=caption
+                        ),
                         reply_markup=markup
                     )
-                    # تعديل التسمية التوضيحية
-                    bot.edit_message_caption(
-                        chat_id=chat_id,
-                        message_id=user_data[user_id]['last_message_id'],
-                        caption=caption,
-                        reply_markup=markup
-                    )
+                    # حفظ معرف الرسالة
+                    user_data[user_id]['last_message_id'] = message_id
+                    return
                 except Exception as e:
-                    print(f"Failed to edit video message: {e}")
-                    # في حال فشل التعديل، نرسل رسالة جديدة
-                    msg = bot.send_video(chat_id, video_url, caption=caption, reply_markup=markup)
-                    user_data[user_id]['last_message_id'] = msg.message_id
-            else:
-                # إرسال رسالة جديدة إذا لم تكن هناك رسالة سابقة
-                msg = bot.send_video(chat_id, video_url, caption=caption, reply_markup=markup)
-                user_data[user_id]['last_message_id'] = msg.message_id
+                    logger.error(f"Failed to edit video message: {e}")
+            
+            # إرسال رسالة جديدة إذا لم تنجح عملية التعديل
+            msg = bot.send_video(chat_id, video_url, caption=caption, reply_markup=markup)
+            user_data[user_id]['last_message_id'] = msg.message_id
         else:
             # الحصول على رابط الصورة
             image_url = item.get('largeImageURL', item.get('webformatURL', ''))
@@ -352,42 +367,39 @@ def show_result(chat_id, user_id):
                 # إذا لم نجد صورة، ننتقل إلى النتيجة التالية
                 user_data[user_id]['current_index'] += 1
                 if user_data[user_id]['current_index'] < len(results):
-                    show_result(chat_id, user_id)
+                    show_result(chat_id, user_id, message_id)
                 else:
                     show_no_results(chat_id, user_id)
                 return
             
-            # إذا كانت هناك رسالة وسائط سابقة، نقوم بتعديلها
-            if 'last_message_id' in user_data[user_id]:
+            # محاولة تعديل الرسالة الحالية
+            if message_id:
                 try:
-                    # تعديل الرسالة الحالية
+                    # تعديل الوسائط والتسمية التوضيحية معاً
                     bot.edit_message_media(
                         chat_id=chat_id,
-                        message_id=user_data[user_id]['last_message_id'],
-                        media=telebot.types.InputMediaPhoto(media=image_url),
+                        message_id=message_id,
+                        media=telebot.types.InputMediaPhoto(
+                            media=image_url,
+                            caption=caption
+                        ),
                         reply_markup=markup
                     )
-                    # تعديل التسمية التوضيحية
-                    bot.edit_message_caption(
-                        chat_id=chat_id,
-                        message_id=user_data[user_id]['last_message_id'],
-                        caption=caption,
-                        reply_markup=markup
-                    )
+                    # حفظ معرف الرسالة
+                    user_data[user_id]['last_message_id'] = message_id
+                    return
                 except Exception as e:
-                    print(f"Failed to edit photo message: {e}")
-                    msg = bot.send_photo(chat_id, image_url, caption=caption, reply_markup=markup)
-                    user_data[user_id]['last_message_id'] = msg.message_id
-            else:
-                # إرسال رسالة جديدة إذا لم تكن هناك رسالة سابقة
-                msg = bot.send_photo(chat_id, image_url, caption=caption, reply_markup=markup)
-                user_data[user_id]['last_message_id'] = msg.message_id
+                    logger.error(f"Failed to edit photo message: {e}")
+            
+            # إرسال رسالة جديدة إذا لم تنجح عملية التعديل
+            msg = bot.send_photo(chat_id, image_url, caption=caption, reply_markup=markup)
+            user_data[user_id]['last_message_id'] = msg.message_id
     except Exception as e:
-        print(f"Error in show_result: {e}")
+        logger.error(f"Error in show_result: {e}")
         # المحاولة مع نتيجة أخرى
         user_data[user_id]['current_index'] += 1
         if user_data[user_id]['current_index'] < len(results):
-            show_result(chat_id, user_id)
+            show_result(chat_id, user_id, message_id)
         else:
             show_no_results(chat_id, user_id)
 
@@ -402,8 +414,8 @@ def show_no_results(chat_id, user_id):
             text="❌ لم يتم العثور على أي نتائج، يرجى المحاولة بكلمات أخرى",
             reply_markup=markup
         )
-    except:
-        pass
+    except Exception as e:
+        logger.error(f"Error showing no results message: {e}")
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("nav_"))
 def navigate_results(call):
@@ -425,7 +437,7 @@ def navigate_results(call):
     user_data[user_id]['last_message_id'] = call.message.message_id
     
     # عرض النتيجة الجديدة في نفس الرسالة
-    show_result(chat_id, user_id)
+    show_result(chat_id, user_id, message_id=call.message.message_id)
 
 @bot.callback_query_handler(func=lambda call: call.data == "download")
 def download_content(call):
@@ -439,8 +451,8 @@ def download_content(call):
             message_id=call.message.message_id,
             reply_markup=None
         )
-    except:
-        pass
+    except Exception as e:
+        logger.error(f"Error removing buttons: {e}")
     
     # إظهار رسالة تأكيد
     bot.answer_callback_query(call.id, "✅ تم التحميل بنجاح!", show_alert=False)
@@ -484,8 +496,8 @@ def show_dev_info(call):
             reply_markup=markup,
             parse_mode='Markdown'
         )
-    except:
-        pass
+    except Exception as e:
+        logger.error(f"Error showing developer info: {e}")
 
 @bot.callback_query_handler(func=lambda call: call.data == "back_to_main")
 def return_to_main(call):
@@ -494,10 +506,10 @@ def return_to_main(call):
     show_main_menu(chat_id, user_id)
 
 if __name__ == '__main__':
-    print("Bot is running...")
+    logger.info("Bot is running...")
     while True:
         try:
             bot.polling(none_stop=True, interval=0, timeout=20)
         except Exception as e:
-            print(f"Error occurred: {e}")
-            time.sleep(15)
+            logger.error(f"Error occurred: {e}")
+            time.sleep(15) 

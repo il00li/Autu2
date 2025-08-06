@@ -1,397 +1,196 @@
-import logging
+import telebot
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 import requests
-import datetime
-import json
-import os
 
-# ================ إعدادات البوت ================
-TOKEN = "7639996535:AAH_Ppw8jeiUg4nJjjEyOXaYlip289jSAio"
-PIXABAY_API_KEY = "51444506-bbfefcaf12816bd85a20222d1"
-CHANNELS = ["@crazys7", "@AWU87"]
-MANAGER_ID = 7251748706
-WEBHOOK_URL = "https://autu2.onrender.com"
+API_KEY = 'FPSXd1183dea1da3476a90735318b3930ba3'
+API_URL = 'https://api.freepik.com/v1/resources'
+bot = telebot.TeleBot('7968375518:AAGGfLq9elxG9GGzNiu_q_VJvPbz07Zx1Qc')  # استبدل بـ توكن بوتك
 
-# ================ إعداد التسجيل ================
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
-)
-logger = logging.getLogger(__name__)
+# تخزين مؤقت لنتائج البحث
+user_data = {}
 
-# ================ وظائف API ================
-def send_message(chat_id, text, reply_markup=None):
-    url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
-    payload = {
-        "chat_id": chat_id,
-        "text": text,
-        "reply_markup": json.dumps(reply_markup) if reply_markup else None
-    }
-    try:
-        response = requests.post(url, json=payload)
-        response.raise_for_status()
-        return response.json()
-    except Exception as e:
-        logger.error(f"خطأ في إرسال رسالة: {e}")
-        return None
+# أنواع المحتوى المدعومة
+CONTENT_TYPES = {
+    'photo': 'صور',
+    'vector': 'رسومات',
+    'psd': 'ملفات PSD',
+    'video': 'فيديو'
+}
 
-def send_photo(chat_id, photo, caption, reply_markup=None):
-    url = f"https://api.telegram.org/bot{TOKEN}/sendPhoto"
-    payload = {
-        "chat_id": chat_id,
-        "photo": photo,
-        "caption": caption,
-        "reply_markup": json.dumps(reply_markup) if reply_markup else None
-    }
-    try:
-        response = requests.post(url, json=payload)
-        response.raise_for_status()
-        return response.json()
-    except Exception as e:
-        logger.error(f"خطأ في إرسال صورة: {e}")
-        return None
+# رموز تعبيرية نصية
+EMOJI = {
+    'welcome': '(^_^)',
+    'design': '<*_*>',
+    'search': '🔎',
+    'next': '→',
+    'prev': '←',
+    'download': '↓',
+    'info': 'ℹ️',
+    'error': '!'
+}
 
-def edit_message_reply_markup(chat_id, message_id, reply_markup):
-    url = f"https://api.telegram.org/bot{TOKEN}/editMessageReplyMarkup"
-    payload = {
-        "chat_id": chat_id,
-        "message_id": message_id,
-        "reply_markup": json.dumps(reply_markup)
-    }
-    try:
-        response = requests.post(url, json=payload)
-        response.raise_for_status()
-    except Exception as e:
-        logger.error(f"خطأ في تعديل لوحة المفاتيح: {e}")
+# قنوات الاشتراك الإجباري
+REQUIRED_CHANNELS = ['@crazys7', '@AWU87']
 
-def edit_message_media(chat_id, message_id, media, reply_markup):
-    url = f"https://api.telegram.org/bot{TOKEN}/editMessageMedia"
-    payload = {
-        "chat_id": chat_id,
-        "message_id": message_id,
-        "media": json.dumps(media),
-        "reply_markup": json.dumps(reply_markup)
-    }
-    try:
-        response = requests.post(url, json=payload)
-        response.raise_for_status()
-    except Exception as e:
-        logger.error(f"خطأ في تعديل الوسائط: {e}")
-
-def send_audio(chat_id, audio, caption, reply_markup=None):
-    url = f"https://api.telegram.org/bot{TOKEN}/sendAudio"
-    payload = {
-        "chat_id": chat_id,
-        "audio": audio,
-        "caption": caption,
-        "reply_markup": json.dumps(reply_markup) if reply_markup else None
-    }
-    try:
-        response = requests.post(url, json=payload)
-        response.raise_for_status()
-        return response.json()
-    except Exception as e:
-        logger.error(f"خطأ في إرسال ملف صوتي: {e}")
-        return None
-
-def delete_message(chat_id, message_id):
-    url = f"https://api.telegram.org/bot{TOKEN}/deleteMessage"
-    payload = {
-        "chat_id": chat_id,
-        "message_id": message_id
-    }
-    try:
-        requests.post(url, json=payload)
-    except Exception as e:
-        logger.error(f"خطأ في حذف رسالة: {e}")
-
-def answer_callback_query(callback_query_id, text=None, show_alert=False):
-    url = f"https://api.telegram.org/bot{TOKEN}/answerCallbackQuery"
-    payload = {"callback_query_id": callback_query_id, "text": text, "show_alert": show_alert}
-    try:
-        requests.post(url, json=payload)
-    except Exception as e:
-        logger.error(f"خطأ في إرسال إجابة للـ callback: {e}")
-
-# ================ لوحات المفاتيح ================
-def get_main_menu_keyboard():
-    return {"inline_keyboard": [
-        [{"text": "انقر للبحث 🎧", "callback_data": "start_search_type"}],
-        [{"text": "عن المطور 🧑‍💻", "callback_data": "about_developer"}]
-    ]}
-
-def get_search_type_keyboard():
-    return {"inline_keyboard": [
-        [{"text": "صور 🖼️", "callback_data": "search_photo"}],
-        [{"text": "أصوات 🎶", "callback_data": "search_sound"}],
-        [{"text": "رجوع ↩️", "callback_data": "back_to_menu"}]
-    ]}
-
-def get_navigation_keyboard(index, total_results, result_type):
-    keyboard_buttons = []
-    if index > 0:
-        keyboard_buttons.append({"text": "« السابق", "callback_data": f'prev_{result_type}'})
-    if index < total_results - 1:
-        keyboard_buttons.append({"text": "التالي »", "callback_data": f'next_{result_type}'})
+@bot.message_handler(commands=['start'])
+def send_welcome(message):
+    user_id = message.from_user.id
+    welcome_text = f"""
+    أهلاً بك مصممي المبدع {EMOJI['welcome']}
+    هذا البوت يساعدك في العثور على أفضل الملحقات التصميمية {EMOJI['design']}
     
-    return {"inline_keyboard": [keyboard_buttons]} if keyboard_buttons else None
-
-def get_back_keyboard():
-    return {"inline_keyboard": [
-        [{"text": "رجوع ↩️", "callback_data": "back_to_menu"}]
-    ]}
-    # ================ إدارة الحالة (تخزين مؤقت) ================
-user_states = {}
-
-def get_user_state(user_id):
-    return user_states.get(user_id, {"state": "MAIN_MENU", "data": {}})
-
-def set_user_state(user_id, state, data=None):
-    user_states[user_id] = {"state": state, "data": data or {}}
-
-# ================ معالجات الرسائل والـ callbacks ================
-def handle_update(update):
-    if 'message' in update:
-        handle_message(update['message'])
-    elif 'callback_query' in update:
-        handle_callback_query(update['callback_query'])
-
-def handle_message(message):
-    user_id = message['from']['id']
-    chat_id = message['chat']['id']
-    text = message.get('text', '')
+    للتأكد من حصولك على أفضل النتائج:
+    - @crazys7
+    - @AWU87
     
-    current_state = get_user_state(user_id)
+    اختر أحد الخيارات للبدء:
+    """
     
-    if text == '/start':
-        if check_subscription(user_id):
-            notify_manager(message['from'])
-            send_message(chat_id, "🌟 قائمة البحث الرئيسية 🌟", reply_markup=get_main_menu_keyboard())
-            set_user_state(user_id, "MAIN_MENU")
-        else:
-            show_channels(chat_id)
-            
-    elif current_state['state'] == "SEARCHING_PHOTO":
-        perform_photo_search(user_id, chat_id, text)
+    markup = InlineKeyboardMarkup(row_width=2)
+    btn_search = InlineKeyboardButton(f'بدء البحث {EMOJI["search"]}', callback_data='start_search')
+    btn_about = InlineKeyboardButton(f'عن البوت {EMOJI["info"]}', callback_data='about_bot')
+    markup.add(btn_search, btn_about)
+    
+    bot.send_message(user_id, welcome_text, reply_markup=markup)
+
+@bot.callback_query_handler(func=lambda call: True)
+def handle_callback(call):
+    user_id = call.from_user.id
+    
+    if call.data == 'about_bot':
+        about_text = f"""
+        {EMOJI['info']} وصف البوت:
         
-    elif current_state['state'] == "SEARCHING_SOUND":
-        perform_sound_search(user_id, chat_id, text)
-
-def handle_callback_query(callback_query):
-    user_id = callback_query['from']['id']
-    chat_id = callback_query['message']['chat']['id']
-    message_id = callback_query['message']['message_id']
-    data = callback_query['data']
-    
-    current_state = get_user_state(user_id)
-    answer_callback_query(callback_query['id']) # Added this line to acknowledge button press
-    
-    if data == 'check_subscription':
-        if check_subscription(user_id):
-            notify_manager(callback_query['from'])
-            send_message(chat_id, "تم التحقق بنجاح! ✅")
-            send_message(chat_id, "🌟 قائمة البحث الرئيسية 🌟", reply_markup=get_main_menu_keyboard())
-            set_user_state(user_id, "MAIN_MENU")
-        else:
-            answer_callback_query(callback_query['id'], "لم تكتمل الاشتراكات بعد! ❌", show_alert=True)
-            
-    elif data == 'start_search_type' and current_state['state'] == "MAIN_MENU":
-        send_message(chat_id, "🔎 اختر نوع البحث:", reply_markup=get_search_type_keyboard())
-        delete_message(chat_id, message_id)
-        set_user_state(user_id, "SEARCH_TYPE")
+        هذا البوت هو مساعدك الشخصي للعثور على ملحقات التصميم 
+        بجودة عالية ومجانية {EMOJI['design']}
         
-    elif data == 'search_photo' and current_state['state'] == "SEARCH_TYPE":
-        send_message(chat_id, "🖼️ أرسل كلمة البحث للصور الآن:")
-        delete_message(chat_id, message_id)
-        set_user_state(user_id, "SEARCHING_PHOTO")
+        يمكنك البحث عن:
+        - صور
+        - فيديوهات
+        - رسومات متجهية
+        - ملفات PSD
+        
+        مطور البوت: @PIXAG7_BOT
+        """
+        bot.send_message(user_id, about_text)
     
-    elif data == 'search_sound' and current_state['state'] == "SEARCH_TYPE":
-        send_message(chat_id, "🎶 أرسل كلمة البحث للمؤثرات الصوتية الآن:")
-        delete_message(chat_id, message_id)
-        set_user_state(user_id, "SEARCHING_SOUND")
-
-    elif data == 'about_developer':
-        about_text = "👨‍💻 عن المطوّر @Ili8_8ill  \nمطوّر مبتدئ في عالم بوتات تيليجرام، بدأ رحلته بشغف كبير لتعلم البرمجة وصناعة أدوات ذكية تساعد المستخدمين وتضيف قيمة للمجتمعات الرقمية. يسعى لتطوير مهاراته يومًا بعد يوم من خلال التجربة، التعلم، والمشاركة في مشاريع بسيطة لكنها فعّالة.\n\n🔰 ما يميّزه في هذه المرحلة:  \n\n- حب الاستكشاف والتعلّم الذاتي  \n- بناء بوتات بسيطة بمهام محددة مثل الرد التلقائي أو إدارة المجموعات  \n- استخدام أدوات مثل BotFather وبيئة Python لتجربة الأفكار  \n- الانفتاح على النقد والتطوير المستمر\n\n📡 القنوات المرتبطة:  \n\n- @crazys7  \n- @AWU87  \n\n🌱 رؤية المطوّر:  \nالانطلاق من الأساسيات نحو الاحتراف، خطوة بخطوة، مع طموح لصناعة بوتات تلبي احتياجات حقيقية وتُحدث فرقًا.\n\n📬 للتواصل أو تبادل الخبرات:  \nتابع الحساب @Ili8_8ill وشارك في رحلة التطوّر."
-        send_message(chat_id, about_text, get_back_keyboard())
-        delete_message(chat_id, message_id)
+    elif call.data == 'start_search':
+        show_content_types(user_id)
     
-    elif data.startswith('next_photo') and current_state['state'] == "RESULTS_PHOTO":
-        navigate_photo_results(user_id, chat_id, message_id, 'next')
+    elif call.data.startswith('type_'):
+        content_type = call.data.split('_')[1]
+        user_data[user_id] = {'type': content_type}
+        msg = bot.send_message(user_id, f'أرسل كلمة البحث {EMOJI["search"]}:')
+        bot.register_next_step_handler(msg, process_search_query)
     
-    elif data.startswith('prev_photo') and current_state['state'] == "RESULTS_PHOTO":
-        navigate_photo_results(user_id, chat_id, message_id, 'prev')
-
-    elif data.startswith('next_sound') and current_state['state'] == "RESULTS_SOUND":
-        navigate_sound_results(user_id, chat_id, message_id, 'next')
-
-    elif data.startswith('prev_sound') and current_state['state'] == "RESULTS_SOUND":
-        navigate_sound_results(user_id, chat_id, message_id, 'prev')
-
-    elif data == 'back_to_menu':
-        delete_message(chat_id, message_id)
-        send_message(chat_id, "🌟 قائمة البحث الرئيسية 🌟", reply_markup=get_main_menu_keyboard())
-        set_user_state(user_id, "MAIN_MENU")
-
-# ================ وظائف مساعدة ================
-def check_subscription(user_id):
-    try:
-        for channel in CHANNELS:
-            url = f"https://api.telegram.org/bot{TOKEN}/getChatMember?chat_id={channel}&user_id={user_id}"
-            response = requests.get(url)
-            status = response.json()['result']['status']
-            if status not in ['member', 'administrator', 'creator']:
-                return False
-        return True
-    except Exception as e:
-        logger.error(f"خطأ في التحقق من الاشتراك: {e}")
-        return False
-
-def notify_manager(user_data):
-    user_id = user_data['id']
-    current_state = get_user_state(user_id)
-    if not current_state['data'].get('notified_manager'):
-        user_info = f"👤 مستخدم جديد انضم إلى القنوات!\n\n🆔 المعرف: {user_data['id']}\n👤 الاسم: {user_data['first_name']}\n📅 التاريخ: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-        if user_data.get('username'): user_info += f"\n🔖 اليوزر: @{user_data['username']}"
-        send_message(MANAGER_ID, user_info)
-        current_state['data']['notified_manager'] = True
-        set_user_state(user_id, current_state['state'], current_state['data'])
-
-def show_channels(chat_id):
-    buttons = {"inline_keyboard": [
-        [{"text": "قناة 1", "url": "https://t.me/crazys7"}, {"text": "قناة 2", "url": "https://t.me/AWU87"}],
-        [{"text": "تحقق | Check", "callback_data": "check_subscription"}]
-    ]}
-    send_message(chat_id, "❗️ يجب الاشتراك في القنوات التالية أولاً:", reply_markup=buttons)
-
-# ================ دوال البحث ================
-def perform_photo_search(user_id, chat_id, search_query):
-    url = f"https://pixabay.com/api/?key={PIXABAY_API_KEY}&q={search_query}&image_type=photo&per_page=40"
+    elif call.data.startswith('result_'):
+        data_parts = call.data.split('_')
+        result_index = int(data_parts[1])
+        action = data_parts[2]
+        
+        if user_id in user_data and 'results' in user_data[user_id]:
+            results = user_data[user_id]['results']
+            current_index = user_data[user_id].get('current_index', 0)
+            
+            if action == 'next':
+                current_index = min(current_index + 1, len(results) - 1)
+            elif action == 'prev':
+                current_index = max(current_index - 1, 0)
+            
+            user_data[user_id]['current_index'] = current_index
+            show_result(user_id, current_index)
     
-    try:
-        response = requests.get(url)
-        response.raise_for_status()
-        results = response.json().get('hits', [])
+    elif call.data.startswith('download_'):
+        if user_id in user_data and 'results' in user_data[user_id]:
+            current_index = user_data[user_id]['current_index']
+            result = user_data[user_id]['results'][current_index]
+            
+            # إرسال الملف حسب نوعه
+            file_url = result['url']
+            file_type = result['type']
+            
+            if file_type == 'photo':
+                bot.send_photo(user_id, file_url)
+            elif file_type == 'vector':
+                bot.send_document(user_id, file_url)
+            elif file_type == 'video':
+                bot.send_video(user_id, file_url)
+            elif file_type == 'psd':
+                bot.send_document(user_id, file_url)
+
+def show_content_types(user_id):
+    markup = InlineKeyboardMarkup(row_width=2)
+    buttons = []
+    for key, value in CONTENT_TYPES.items():
+        buttons.append(InlineKeyboardButton(f'{value} {EMOJI["search"]}', callback_data=f'type_{key}'))
+    markup.add(*buttons)
+    bot.send_message(user_id, 'اختر نوع المحتوى الذي تريد البحث عنه:', reply_markup=markup)
+
+def process_search_query(message):
+    user_id = message.from_user.id
+    query = message.text
+    
+    if user_id in user_data:
+        content_type = user_data[user_id]['type']
+        results = search_freepik(query, content_type)
         
         if results:
-            data = {"results": results, "current_index": 0, "current_query": search_query}
-            set_user_state(user_id, "RESULTS_PHOTO", data)
-            show_photo_result(chat_id, data)
+            user_data[user_id]['results'] = results
+            user_data[user_id]['current_index'] = 0
+            show_result(user_id, 0)
         else:
-            send_message(chat_id, "⚠️ لم يتم العثور على نتائج. حاول بكلمات أخرى.")
-            send_message(chat_id, "🌟 قائمة البحث الرئيسية 🌟", reply_markup=get_main_menu_keyboard())
-            set_user_state(user_id, "MAIN_MENU")
-    except Exception as e:
-        logger.error(f"خطأ في البحث عن الصور: {e}")
-        send_message(chat_id, "❌ حدث خطأ في البحث. يرجى المحاولة لاحقًا.")
-        send_message(chat_id, "🌟 قائمة البحث الرئيسية 🌟", reply_markup=get_main_menu_keyboard())
-        set_user_state(user_id, "MAIN_MENU")
+            bot.send_message(user_id, f'لم أجد نتائج {EMOJI["error"]}')
 
-def perform_sound_search(user_id, chat_id, search_query):
-    url = f"https://pixabay.com/api/videos/?key={PIXABAY_API_KEY}&q={search_query}&video_type=all&per_page=40"
-
-    try:
-        response = requests.get(url)
-        response.raise_for_status()
-        results = response.json().get('hits', [])
-        
-        if results:
-            data = {"results": results, "current_index": 0, "current_query": search_query}
-            set_user_state(user_id, "RESULTS_SOUND", data)
-            show_sound_result(chat_id, data)
-        else:
-            send_message(chat_id, "⚠️ لم يتم العثور على نتائج. حاول بكلمات أخرى.")
-            send_message(chat_id, "🌟 قائمة البحث الرئيسية 🌟", reply_markup=get_main_menu_keyboard())
-            set_user_state(user_id, "MAIN_MENU")
-    except Exception as e:
-        logger.error(f"خطأ في البحث عن الأصوات: {e}")
-        send_message(chat_id, "❌ حدث خطأ في البحث. يرجى المحاولة لاحقًا.")
-        send_message(chat_id, "🌟 قائمة البحث الرئيسية 🌟", reply_markup=get_main_menu_keyboard())
-        set_user_state(user_id, "MAIN_MENU")
-
-def show_photo_result(chat_id, data, message_id=None):
-    index = data['current_index']
-    results = data['results']
+def show_result(user_id, index):
+    if user_id not in user_data or 'results' not in user_data[user_id]:
+        return
+    
+    results = user_data[user_id]['results']
     result = results[index]
-
-    keyboard = get_navigation_keyboard(index, len(results), 'photo')
-    caption = f"📸 المصور: {result['user']}\n\nصورة {index + 1} من {len(results)}"
     
-    if message_id:
-        media = {"type": "photo", "media": result['largeImageURL'], "caption": caption}
-        edit_message_media(chat_id, message_id, media, keyboard)
+    # إنشاء واجهة النتائج
+    caption = f"النتيجة {index+1} من {len(results)}\n"
+    caption += f"العنوان: {result['title']}\n"
+    
+    # أزرار التنقل والتحميل
+    markup = InlineKeyboardMarkup(row_width=3)
+    btn_prev = InlineKeyboardButton(f'{EMOJI["prev"]} سابق', callback_data=f'result_{index}_prev')
+    btn_next = InlineKeyboardButton(f'تالي {EMOJI["next"]}', callback_data=f'result_{index}_next')
+    btn_download = InlineKeyboardButton(f'تحميل {EMOJI["download"]}', callback_data=f'download_{index}')
+    
+    markup.add(btn_prev, btn_download, btn_next)
+    
+    # إرسال الصورة المصغرة مع النتيجة
+    if 'thumbnail' in result and result['thumbnail']:
+        bot.send_photo(user_id, result['thumbnail'], caption=caption, reply_markup=markup)
     else:
-        send_photo(chat_id, result['largeImageURL'], caption, keyboard)
+        bot.send_message(user_id, caption, reply_markup=markup)
 
-def show_sound_result(chat_id, data, message_id=None):
-    index = data['current_index']
-    results = data['results']
-    result = results[index]
+def search_freepik(query, content_type):
+    headers = {'Authorization': f'Bearer {API_KEY}'}
+    params = {
+        'locale': 'en-US',
+        'page': 1,
+        'limit': 10,
+        'term': query,
+        'type': content_type
+    }
     
-    keyboard = get_navigation_keyboard(index, len(results), 'sound')
-    sound_url = result['videos']['tiny']['url'] 
-    caption = f"🎶 مؤثر صوتي من: {result['user']}\n\nصوت {index + 1} من {len(results)}"
+    try:
+        response = requests.get(API_URL, headers=headers, params=params)
+        if response.status_code == 200:
+            data = response.json()
+            return [{
+                'id': item['id'],
+                'title': item['title'],
+                'url': item['url'],
+                'type': item['type'],
+                'thumbnail': item['thumbnails'][0]['url'] if item['thumbnails'] else None
+            } for item in data.get('data', [])]
+    except Exception as e:
+        print(f"API Error: {e}")
+    return []
 
-    if message_id:
-        delete_message(chat_id, message_id)
-    send_audio(chat_id, sound_url, caption, keyboard)
-
-def navigate_photo_results(user_id, chat_id, message_id, direction):
-    current_state = get_user_state(user_id)
-    data = current_state['data']
-    current_index = data['current_index']
-    
-    new_index = current_index + 1 if direction == 'next' else current_index - 1
-    
-    data['current_index'] = new_index
-    set_user_state(user_id, "RESULTS_PHOTO", data)
-    show_photo_result(chat_id, data, message_id)
-
-def navigate_sound_results(user_id, chat_id, message_id, direction):
-    current_state = get_user_state(user_id)
-    data = current_state['data']
-    current_index = data['current_index']
-    
-    new_index = current_index + 1 if direction == 'next' else current_index - 1
-    
-    data['current_index'] = new_index
-    set_user_state(user_id, "RESULTS_SOUND", data)
-    show_sound_result(chat_id, data, message_id)
-
-# ================ التشغيل الرئيسي ================
 if __name__ == '__main__':
-    from aiohttp import web
-
-    async def webhook_handler(request):
-        if request.method == 'POST':
-            update = await request.json()
-            handle_update(update)
-            return web.Response(text="ok")
-        else:
-            return web.Response(text="Hello, bot is running!")
-
-    async def on_startup(app):
-        # Setting webhook on startup
-        url = f"https://api.telegram.org/bot{TOKEN}/setWebhook"
-        payload = {"url": WEBHOOK_URL}
-        try:
-            response = requests.post(url, json=payload)
-            response.raise_for_status()
-            logger.info("Webhook set successfully.")
-        except Exception as e:
-            logger.error(f"Failed to set webhook: {e}")
-
-    async def on_shutdown(app):
-        # Removing webhook on shutdown
-        url = f"https://api.telegram.org/bot{TOKEN}/deleteWebhook"
-        try:
-            requests.post(url)
-            logger.info("Webhook removed successfully.")
-        except Exception as e:
-            logger.error(f"Failed to delete webhook: {e}")
-
-    app = web.Application()
-    app.router.add_post('/', webhook_handler)
-    app.on_startup.append(on_startup)
-    app.on_shutdown.append(on_shutdown)
-    
-    port = int(os.environ.get('PORT', 8443))
-    web.run_app(app, host='0.0.0.0', port=port)
+    print("Bot is running...")
+    bot.polling()

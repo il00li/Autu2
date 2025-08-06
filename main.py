@@ -340,7 +340,6 @@ def show_result(chat_id, user_id, message_id=None):
     
     # الأزرار مع استبدال الرموز التعبيرية
     markup.add(InlineKeyboardButton("تحميل", callback_data="download"))
-    markup.add(InlineKeyboardButton("بحث جديد", callback_data="search"))
     
     # إرسال النتيجة
     try:

@@ -1,9 +1,9 @@
 import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 import requests
-import json
+import time
 
-TOKEN = '8373741818:AAHTDbjVJUu6tY29pUvuUb38rSLQuSgBTQA '
+TOKEN = '8373741818:AAHTndgrs7FXSQr9arQ-_-3JXIRenv9k2x8'
 PIXABAY_API_KEY = '39878241-6c3d5e7d3b1d7a2d2c6f4c1a3'  # استبدلها بمفتاحك الفعلي
 ADMIN_ID = 7251748706  # معرف المدير
 
@@ -32,7 +32,8 @@ def send_welcome(message):
     if not_subscribed:
         markup = InlineKeyboardMarkup()
         markup.add(InlineKeyboardButton("تحقق من الاشتراك", callback_data="check_subscription"))
-        bot.send_message(chat_id, "⛔ يجب الاشتراك في القنوات التالية أولاً:\n" + "\n".join(not_subscribed), reply_markup=markup)
+        msg = bot.send_message(chat_id, "⛔ يجب الاشتراك في القنوات التالية أولاً:\n" + "\n".join(not_subscribed), reply_markup=markup)
+        user_data[user_id] = {'main_message_id': msg.message_id}
     else:
         show_main_menu(chat_id, user_id)
 
@@ -78,13 +79,14 @@ def show_main_menu(chat_id, user_id):
                 text=welcome_msg,
                 reply_markup=markup
             )
+            user_data[user_id]['main_message_id'] = user_data[user_id]['main_message_id']
             return
-        except:
-            pass
+        except Exception as e:
+            print(f"Error editing main menu: {e}")
     
     # إرسال رسالة جديدة إذا لم تكن هناك رسالة سابقة
     msg = bot.send_message(chat_id, welcome_msg, reply_markup=markup)
-    user_data[user_id]['main_message_id'] = msg.message_id
+    user_data[user_id] = {'main_message_id': msg.message_id}
 
 @bot.callback_query_handler(func=lambda call: call.data == "check_subscription")
 def verify_subscription(call):
@@ -112,6 +114,7 @@ def show_content_types(call):
     # إعادة ضبط بيانات البحث
     if user_id not in user_data:
         user_data[user_id] = {}
+    
     user_data[user_id].pop('search_results', None)
     user_data[user_id].pop('current_index', None)
     
@@ -296,37 +299,42 @@ def show_result(chat_id, user_id):
     markup.add(InlineKeyboardButton("⬇️ تحميل", callback_data="download"))
     markup.add(InlineKeyboardButton("🔍 بحث جديد", callback_data="search"))
     
-    # محاولة التعديل على الرسالة السابقة
+    # إذا كانت هناك رسالة سابقة، نحاول تعديلها
     if 'last_message_id' in user_data[user_id]:
         try:
             if 'videos' in item:  # فيديو
-                video_url = item['videos']['medium']['url']
+                # التعديل باستخدام edit_message_media
+                media = telebot.types.InputMediaVideo(media=item['videos']['medium']['url'], caption=caption)
                 bot.edit_message_media(
                     chat_id=chat_id,
                     message_id=user_data[user_id]['last_message_id'],
-                    media=telebot.types.InputMediaVideo(video_url, caption=caption),
+                    media=media,
                     reply_markup=markup
                 )
             else:  # صورة
-                image_url = item['largeImageURL']
+                # التعديل باستخدام edit_message_media
+                media = telebot.types.InputMediaPhoto(media=item['largeImageURL'], caption=caption)
                 bot.edit_message_media(
                     chat_id=chat_id,
                     message_id=user_data[user_id]['last_message_id'],
-                    media=telebot.types.InputMediaPhoto(image_url, caption=caption),
+                    media=media,
                     reply_markup=markup
                 )
             return
-        except:
+        except telebot.apihelper.ApiTelegramException as e:
+            print(f"ApiTelegramException: {e}")
+            # إذا فشل التعديل، نرسل رسالة جديدة
             pass
+        except Exception as e:
+            print(f"Exception in editing media: {e}")
+            # إذا فشل التعديل، نرسل رسالة جديدة
     
-    # إذا لم تنجح عملية التعديل، نرسل رسالة جديدة
+    # إرسال رسالة جديدة (إما أول رسالة أو بعد فشل التعديل)
     try:
         if 'videos' in item:  # فيديو
-            video_url = item['videos']['medium']['url']
-            msg = bot.send_video(chat_id, video_url, caption=caption, reply_markup=markup)
+            msg = bot.send_video(chat_id, item['videos']['medium']['url'], caption=caption, reply_markup=markup)
         else:  # صورة
-            image_url = item['largeImageURL']
-            msg = bot.send_photo(chat_id, image_url, caption=caption, reply_markup=markup)
+            msg = bot.send_photo(chat_id, item['largeImageURL'], caption=caption, reply_markup=markup)
         
         # حفظ معرف الرسالة للتعديل لاحقاً
         user_data[user_id]['last_message_id'] = msg.message_id
@@ -378,11 +386,14 @@ def download_content(call):
     chat_id = call.message.chat.id
     
     # إزالة أزرار التنقل
-    bot.edit_message_reply_markup(
-        chat_id=chat_id,
-        message_id=call.message.message_id,
-        reply_markup=None
-    )
+    try:
+        bot.edit_message_reply_markup(
+            chat_id=chat_id,
+            message_id=call.message.message_id,
+            reply_markup=None
+        )
+    except:
+        pass
     
     # إظهار رسالة تأكيد
     bot.answer_callback_query(call.id, "✅ تم التحميل بنجاح!")
@@ -422,7 +433,8 @@ def show_dev_info(call):
         chat_id=call.message.chat.id,
         message_id=call.message.message_id,
         text=dev_info,
-        reply_markup=markup
+        reply_markup=markup,
+        parse_mode='Markdown'
     )
 
 @bot.callback_query_handler(func=lambda call: call.data == "back_to_main")
@@ -433,4 +445,9 @@ def return_to_main(call):
 
 if __name__ == '__main__':
     print("Bot is running...")
-    bot.polling(none_stop=True)
+    while True:
+        try:
+            bot.polling(none_stop=True)
+        except Exception as e:
+            print(f"Error occurred: {e}")
+            time.sleep(15) 

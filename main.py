@@ -11,7 +11,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-TOKEN = '8373741818:AAHca5FsSiWwQiNFXL3CLeeFLtbOiJiQeJk'
+TOKEN = '8373741818:AAERPD5-M2p-Wy7YAvWXuygQbnoa2jNh_vk'
 PIXABAY_API_KEY = '51444506-bffefcaf12816bd85a20222d1'
 ADMIN_ID = 7251748706  # معرف المدير
 

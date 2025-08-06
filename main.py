@@ -1,453 +1,184 @@
 import telebot
-from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 import requests
+import json
 import time
 
-TOKEN = '8373741818:AAHTndgrs7FXSQr9arQ-_-3JXIRenv9k2x8'
-PIXABAY_API_KEY = '51444506-bffefcaf12816bd85a20222d1'  # استبدلها بمفتاحك الفعلي
-ADMIN_ID = 7251748706  # معرف المدير
+# تعريف توكن البوت ومفتاح Pixabay API
+BOT_TOKEN = "8373741818:AAHTndgrs7FXSQr9arQ-_-3JXIRenv9k2x8"
+PIXABAY_API_KEY = "51444506-bffefcaf12816bd85a20222d1"
 
-bot = telebot.TeleBot(TOKEN)
+# معرفات القنوات الإلزامية ومعرف المدير
+CHANNEL_1 = "@crazys7"
+CHANNEL_2 = "@AWU87"
+ADMIN_ID = 7251748706
 
-# قنوات الاشتراك الإجباري
-REQUIRED_CHANNELS = ['@crazys7', '@AWU87']
+# تهيئة البوت
+bot = telebot.TeleBot(BOT_TOKEN)
 
-# ذاكرة مؤقتة لتخزين نتائج البحث لكل مستخدم
+# قاموس لتخزين بيانات المستخدمين (حالة البحث، النتائج، إلخ)
 user_data = {}
-new_users = set()  # لتتبع المستخدمين الجدد
+
+# --- الدوال المساعدة ---
+
+# دالة للتحقق من اشتراك المستخدم في القنوات
+def is_subscribed(user_id):
+    try:
+        # التحقق من القناة الأولى
+        member1 = bot.get_chat_member(CHANNEL_1, user_id)
+        # التحقق من القناة الثانية
+        member2 = bot.get_chat_member(CHANNEL_2, user_id)
+        
+        # إذا كان المستخدم مشتركًا في كلتا القناتين، يُرجع True
+        return member1.status in ['member', 'creator', 'administrator'] and \
+               member2.status in ['member', 'creator', 'administrator']
+    except telebot.apihelper.ApiException as e:
+        # يمكن أن يحدث خطأ إذا كانت القنوات خاصة
+        return False
+
+# دالة لإرسال رسالة الترحيب الرئيسية
+def send_welcome_message(chat_id):
+    welcome_text = """(◕‿◕)
+   \|/          PEXELBO
+   / \       
+ابحث بالانجليزي '"""
+    
+    markup = telebot.types.InlineKeyboardMarkup()
+    search_button = telebot.types.InlineKeyboardButton("انقر للبحث ⌕", callback_data="start_search")
+    dev_info_button = telebot.types.InlineKeyboardButton("(⊙-DEV-☉)", callback_data="dev_info")
+    markup.add(search_button)
+    markup.add(dev_info_button)
+    
+    bot.send_message(chat_id, welcome_text, reply_markup=markup)
+
+# دالة لإرسال إشعار للمدير عند انضمام مستخدم جديد
+def notify_admin(user):
+    username = user.username if user.username else "لا يوجد"
+    message = f"مستخدم جديد انضم:\nID: {user.id}\nالاسم: {user.first_name}\nاسم المستخدم: @{username}\nالوقت: {time.ctime()}"
+    bot.send_message(ADMIN_ID, message)
+
+# --- معالجة الأوامر والرسائل ---
 
 @bot.message_handler(commands=['start'])
-def send_welcome(message):
+def start_command(message):
     user_id = message.from_user.id
-    chat_id = message.chat.id
     
-    # التحقق من المستخدم الجديد
-    if user_id not in new_users:
-        new_users.add(user_id)
-        notify_admin(user_id, message.from_user.username)
+    # إرسال إشعار للمدير عند انضمام مستخدم جديد
+    notify_admin(message.from_user)
     
-    # التحقق من الاشتراك في القنوات
-    not_subscribed = check_subscription(user_id)
-    
-    if not_subscribed:
-        markup = InlineKeyboardMarkup()
-        markup.add(InlineKeyboardButton("تحقق من الاشتراك", callback_data="check_subscription"))
-        msg = bot.send_message(chat_id, "⛔ يجب الاشتراك في القنوات التالية أولاً:\n" + "\n".join(not_subscribed), reply_markup=markup)
-        user_data[user_id] = {'main_message_id': msg.message_id}
+    if is_subscribed(user_id):
+        send_welcome_message(message.chat.id)
     else:
-        show_main_menu(chat_id, user_id)
+        # إظهار رسالة الاشتراك الإجباري
+        markup = telebot.types.InlineKeyboardMarkup()
+        markup.add(telebot.types.InlineKeyboardButton("تحقق من الاشتراك", callback_data="check_subscription"))
+        bot.send_message(message.chat.id, "الرجاء الاشتراك في القنوات التالية للمتابعة:\n@crazys7\n@AWU87", reply_markup=markup)
 
-def notify_admin(user_id, username):
-    """إرسال إشعار للمدير عند انضمام مستخدم جديد"""
-    try:
-        username = f"@{username}" if username else "بدون معرف"
-        message = f"👤 مستخدم جديد انضم للبوت:\n\n"
-        message += f"🆔 ID: {user_id}\n"
-        message += f"👤 Username: {username}"
-        bot.send_message(ADMIN_ID, message)
-    except Exception as e:
-        print(f"Error notifying admin: {e}")
-
-def check_subscription(user_id):
-    not_subscribed = []
-    for channel in REQUIRED_CHANNELS:
-        try:
-            chat_member = bot.get_chat_member(chat_id=channel, user_id=user_id)
-            if chat_member.status not in ['member', 'administrator', 'creator']:
-                not_subscribed.append(channel)
-        except Exception as e:
-            print(f"Error checking subscription: {e}")
-            not_subscribed.append(channel)
-    return not_subscribed
-
-def show_main_menu(chat_id, user_id):
-    # إعادة ضبط بيانات المستخدم
-    user_data[user_id] = {}
-    
-    markup = InlineKeyboardMarkup()
-    markup.add(InlineKeyboardButton("انقر للبحث ⌕", callback_data="search"))
-    markup.add(InlineKeyboardButton("(⊙-DEV-☉)", callback_data="about_dev"))
-    
-    welcome_msg = "(◕‿◕)\n   \|/          PEXELBO\n   / \\\nابحث بالانجليزي '"
-    
-    # إذا كانت هناك رسالة سابقة، نقوم بتعديلها بدلاً من إرسال رسالة جديدة
-    if user_id in user_data and 'main_message_id' in user_data[user_id]:
-        try:
-            bot.edit_message_text(
-                chat_id=chat_id,
-                message_id=user_data[user_id]['main_message_id'],
-                text=welcome_msg,
-                reply_markup=markup
-            )
-            user_data[user_id]['main_message_id'] = user_data[user_id]['main_message_id']
-            return
-        except Exception as e:
-            print(f"Error editing main menu: {e}")
-    
-    # إرسال رسالة جديدة إذا لم تكن هناك رسالة سابقة
-    msg = bot.send_message(chat_id, welcome_msg, reply_markup=markup)
-    user_data[user_id] = {'main_message_id': msg.message_id}
-
-@bot.callback_query_handler(func=lambda call: call.data == "check_subscription")
-def verify_subscription(call):
-    user_id = call.from_user.id
-    chat_id = call.message.chat.id
-    not_subscribed = check_subscription(user_id)
-    
-    if not_subscribed:
-        markup = InlineKeyboardMarkup()
-        markup.add(InlineKeyboardButton("تحقق من الاشتراك", callback_data="check_subscription"))
-        bot.edit_message_text(
-            chat_id=chat_id,
-            message_id=call.message.message_id,
-            text="⛔ يجب الاشتراك في القنوات التالية أولاً:\n" + "\n".join(not_subscribed),
-            reply_markup=markup
-        )
-    else:
-        show_main_menu(chat_id, user_id)
-
-@bot.callback_query_handler(func=lambda call: call.data == "search")
-def show_content_types(call):
+# معالجة الضغط على الأزرار (Inline Keyboard)
+@bot.callback_query_handler(func=lambda call: True)
+def callback_query(call):
     user_id = call.from_user.id
     chat_id = call.message.chat.id
     
-    # إعادة ضبط بيانات البحث
-    if user_id not in user_data:
-        user_data[user_id] = {}
-    
-    user_data[user_id].pop('search_results', None)
-    user_data[user_id].pop('current_index', None)
-    
-    markup = InlineKeyboardMarkup()
-    markup.add(InlineKeyboardButton("Photos", callback_data="type_photo"))
-    markup.add(InlineKeyboardButton("Vectors", callback_data="type_vector"))
-    markup.add(InlineKeyboardButton("Illustrations", callback_data="type_illustration"))
-    markup.add(InlineKeyboardButton("Videos", callback_data="type_video"))
-    markup.add(InlineKeyboardButton("All", callback_data="type_all"))
-    
-    bot.edit_message_text(
-        chat_id=chat_id,
-        message_id=call.message.message_id,
-        text="اختر نوع المحتوى:",
-        reply_markup=markup
-    )
+    if call.data == "check_subscription":
+        if is_subscribed(user_id):
+            bot.edit_message_text("شكراً لك! لقد تم التحقق.", chat_id, call.message.message_id)
+            send_welcome_message(chat_id)
+        else:
+            bot.answer_callback_query(call.id, "لم يتم الاشتراك بعد، يرجى الانضمام للقنوات.")
+            
+    elif call.data == "start_search":
+        # فتح قائمة أنواع المحتوى
+        markup = telebot.types.InlineKeyboardMarkup()
+        markup.row(telebot.types.InlineKeyboardButton("Photos", callback_data="type_photos"),
+                   telebot.types.InlineKeyboardButton("Vectors", callback_data="type_vectors"))
+        markup.row(telebot.types.InlineKeyboardButton("Illustrations", callback_data="type_illustrations"),
+                   telebot.types.InlineKeyboardButton("Videos", callback_data="type_videos"))
+        markup.add(telebot.types.InlineKeyboardButton("All", callback_data="type_all"))
+        
+        bot.edit_message_text("اختر نوع المحتوى:", chat_id, call.message.message_id, reply_markup=markup)
+        
+    elif call.data.startswith("type_"):
+        content_type = call.data.split('_')[1]
+        
+        # تخزين نوع المحتوى في بيانات المستخدم
+        user_data[user_id] = {'content_type': content_type, 'state': 'awaiting_query'}
+        
+        # طلب كلمة البحث
+        bot.edit_message_text("أرسل كلمة البحث باللغة الإنجليزية:", chat_id, call.message.message_id)
+        
+    elif call.data == "dev_info":
+        # عرض معلومات المطور
+        dev_info_text = "أنا Ili8_8ill، مطور هذا البوت...\nالقنوات: @crazys7, @AWU87"
+        markup = telebot.types.InlineKeyboardMarkup()
+        markup.add(telebot.types.InlineKeyboardButton("رجوع", callback_data="back_to_main"))
+        bot.edit_message_text(dev_info_text, chat_id, call.message.message_id, reply_markup=markup)
+        
+    elif call.data == "back_to_main":
+        send_welcome_message(chat_id)
+        bot.delete_message(chat_id, call.message.message_id)
 
-@bot.callback_query_handler(func=lambda call: call.data.startswith("type_"))
-def request_search_term(call):
-    content_type = call.data.split("_")[1]
-    user_id = call.from_user.id
-    chat_id = call.message.chat.id
-    
-    # تخزين نوع المحتوى المختار
-    if user_id not in user_data:
-        user_data[user_id] = {}
-    user_data[user_id]['content_type'] = content_type
-    
-    # طلب كلمة البحث مع زر إلغاء
-    markup = InlineKeyboardMarkup()
-    markup.add(InlineKeyboardButton("إلغاء البحث", callback_data="cancel_search"))
-    
-    bot.edit_message_text(
-        chat_id=chat_id,
-        message_id=call.message.message_id,
-        text="🔍 أرسل كلمة البحث باللغة الإنجليزية:",
-        reply_markup=markup
-    )
-    
-    # حفظ معرف الرسالة للاستخدام لاحقاً
-    user_data[user_id]['search_message_id'] = call.message.message_id
-    bot.register_next_step_handler(call.message, process_search_term, user_id)
-
-@bot.callback_query_handler(func=lambda call: call.data == "cancel_search")
-def cancel_search(call):
-    user_id = call.from_user.id
-    chat_id = call.message.chat.id
-    show_main_menu(chat_id, user_id)
-
-def process_search_term(message, user_id):
-    chat_id = message.chat.id
-    search_term = message.text
-    
-    # حذف رسالة إدخال المستخدم
-    try:
-        bot.delete_message(chat_id, message.message_id)
-    except:
-        pass
-    
-    # استرجاع نوع المحتوى
-    if user_id not in user_data or 'content_type' not in user_data[user_id]:
-        show_main_menu(chat_id, user_id)
-        return
-    
+# معالجة الرسائل النصية
+@bot.message_handler(func=lambda message: user_data.get(message.from_user.id, {}).get('state') == 'awaiting_query')
+def handle_search_query(message):
+    user_id = message.from_user.id
+    query = message.text
     content_type = user_data[user_id]['content_type']
     
-    # تحديث الرسالة السابقة لإظهار حالة التحميل
-    try:
-        bot.edit_message_text(
-            chat_id=chat_id,
-            message_id=user_data[user_id]['search_message_id'],
-            text="🔍 جاري البحث في قاعدة البيانات..."
-        )
-    except:
-        pass
+    # حذف رسالة المستخدم
+    bot.delete_message(message.chat.id, message.message_id)
     
-    # البحث في Pixabay
-    results = search_pixabay(search_term, content_type)
-    
-    if not results or 'hits' not in results or len(results['hits']) == 0:
-        # عرض خيارات عند عدم وجود نتائج
-        markup = InlineKeyboardMarkup()
-        markup.add(InlineKeyboardButton("🔍 بحث جديد", callback_data="search"))
-        markup.add(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="back_to_main"))
-        
-        try:
-            bot.edit_message_text(
-                chat_id=chat_id,
-                message_id=user_data[user_id]['search_message_id'],
-                text=f"⚠️ لم يتم العثور على نتائج لكلمة: {search_term}\nيرجى المحاولة بكلمات أخرى",
-                reply_markup=markup
-            )
-        except:
-            pass
-        return
-    
-    # حفظ النتائج
-    user_data[user_id]['search_term'] = search_term
-    user_data[user_id]['search_results'] = results['hits']
-    user_data[user_id]['current_index'] = 0
-    
-    # عرض النتيجة الأولى
-    show_result(chat_id, user_id)
-
-def search_pixabay(query, content_type):
-    base_url = "https://pixabay.com/api/"
-    params = {
-        'key': PIXABAY_API_KEY,
-        'q': query,
-        'per_page': 50,
-        'lang': 'en'
-    }
-    
-    # تحديد نوع المحتوى
-    if content_type == 'photo':
-        params['image_type'] = 'photo'
-    elif content_type == 'vector':
-        params['image_type'] = 'vector'
-    elif content_type == 'illustration':
-        params['image_type'] = 'photo'
-        params['category'] = 'design'
-    elif content_type == 'video':
-        params['video_type'] = 'all'
-        base_url = "https://pixabay.com/api/videos/"
-    else:  # all
-        params['image_type'] = 'all'
+    # إرسال رسالة "جاري البحث..."
+    processing_msg = bot.send_message(message.chat.id, "جاري البحث...")
     
     try:
-        response = requests.get(base_url, params=params, timeout=15)
-        response.raise_for_status()
-        return response.json()
-    except Exception as e:
-        print(f"Pixabay API error: {e}")
-        return None
-
-def show_result(chat_id, user_id):
-    if user_id not in user_data or 'search_results' not in user_data[user_id]:
-        try:
-            bot.edit_message_text(
-                chat_id=chat_id,
-                message_id=user_data[user_id]['search_message_id'],
-                text="❌ انتهت جلسة البحث، ابدأ بحثاً جديداً"
-            )
-        except:
-            pass
-        return
-    
-    results = user_data[user_id]['search_results']
-    current_index = user_data[user_id]['current_index']
-    search_term = user_data[user_id].get('search_term', '')
-    
-    if current_index < 0 or current_index >= len(results):
-        try:
-            bot.edit_message_text(
-                chat_id=chat_id,
-                message_id=user_data[user_id]['last_message_id'],
-                text="⏹️ نهاية النتائج"
-            )
-        except:
-            pass
-        return
-    
-    item = results[current_index]
-    
-    # بناء الرسالة
-    caption = f"🔍 البحث: {search_term}\n"
-    caption += f"📌 النتيجة {current_index+1} من {len(results)}\n"
-    if 'tags' in item:
-        caption += f"🏷️ الوسوم: {item['tags']}\n"
-    
-    # بناء أزرار التنقل
-    markup = InlineKeyboardMarkup()
-    row_buttons = []
-    if current_index > 0:
-        row_buttons.append(InlineKeyboardButton("◀ السابق", callback_data=f"nav_prev"))
-    if current_index < len(results) - 1:
-        row_buttons.append(InlineKeyboardButton("التالي ▶", callback_data=f"nav_next"))
-    
-    if row_buttons:
-        markup.row(*row_buttons)
-    
-    markup.add(InlineKeyboardButton("⬇️ تحميل", callback_data="download"))
-    markup.add(InlineKeyboardButton("🔍 بحث جديد", callback_data="search"))
-    
-    # إذا كانت هناك رسالة سابقة، نحاول تعديلها
-    if 'last_message_id' in user_data[user_id]:
-        try:
-            if 'videos' in item:  # فيديو
-                # التعديل باستخدام edit_message_media
-                media = telebot.types.InputMediaVideo(media=item['videos']['medium']['url'], caption=caption)
-                bot.edit_message_media(
-                    chat_id=chat_id,
-                    message_id=user_data[user_id]['last_message_id'],
-                    media=media,
-                    reply_markup=markup
-                )
-            else:  # صورة
-                # التعديل باستخدام edit_message_media
-                media = telebot.types.InputMediaPhoto(media=item['largeImageURL'], caption=caption)
-                bot.edit_message_media(
-                    chat_id=chat_id,
-                    message_id=user_data[user_id]['last_message_id'],
-                    media=media,
-                    reply_markup=markup
-                )
-            return
-        except telebot.apihelper.ApiTelegramException as e:
-            print(f"ApiTelegramException: {e}")
-            # إذا فشل التعديل، نرسل رسالة جديدة
-            pass
-        except Exception as e:
-            print(f"Exception in editing media: {e}")
-            # إذا فشل التعديل، نرسل رسالة جديدة
-    
-    # إرسال رسالة جديدة (إما أول رسالة أو بعد فشل التعديل)
-    try:
-        if 'videos' in item:  # فيديو
-            msg = bot.send_video(chat_id, item['videos']['medium']['url'], caption=caption, reply_markup=markup)
-        else:  # صورة
-            msg = bot.send_photo(chat_id, item['largeImageURL'], caption=caption, reply_markup=markup)
-        
-        # حفظ معرف الرسالة للتعديل لاحقاً
-        user_data[user_id]['last_message_id'] = msg.message_id
-        
-    except Exception as e:
-        print(f"Error sending media: {e}")
-        # المحاولة مع نتيجة أخرى
-        user_data[user_id]['current_index'] += 1
-        if user_data[user_id]['current_index'] < len(results):
-            show_result(chat_id, user_id)
+        # إرسال طلب إلى Pixabay API
+        if content_type == 'videos':
+            url = f"https://pixabay.com/api/videos/?key={PIXABAY_API_KEY}&q={query}&lang=en&per_page=50"
+            response = requests.get(url)
+            data = response.json().get('hits', [])
+            
+            # معالجة بيانات الفيديو
+            user_data[user_id]['results'] = data
+            user_data[user_id]['index'] = 0
+            
+            # إرسال النتيجة الأولى
+            if data:
+                send_video_result(message.chat.id, user_id, processing_msg.message_id)
+            else:
+                bot.edit_message_text("لم يتم العثور على نتائج.", message.chat.id, processing_msg.message_id)
         else:
-            markup = InlineKeyboardMarkup()
-            markup.add(InlineKeyboardButton("🔍 بحث جديد", callback_data="search"))
-            try:
-                bot.edit_message_text(
-                    chat_id=chat_id,
-                    message_id=user_data[user_id]['search_message_id'],
-                    text="❌ حدث خطأ في عرض النتائج، يرجى المحاولة بكلمات أخرى",
-                    reply_markup=markup
-                )
-            except:
-                pass
+            url = f"https://pixabay.com/api/?key={PIXABAY_API_KEY}&q={query}&image_type={content_type}&lang=en&per_page=50"
+            response = requests.get(url)
+            data = response.json().get('hits', [])
+            
+            # معالجة بيانات الصور
+            user_data[user_id]['results'] = data
+            user_data[user_id]['index'] = 0
+            
+            # إرسال النتيجة الأولى
+            if data:
+                send_image_result(message.chat.id, user_id, processing_msg.message_id)
+            else:
+                bot.edit_message_text("لم يتم العثور على نتائج.", message.chat.id, processing_msg.message_id)
 
-@bot.callback_query_handler(func=lambda call: call.data.startswith("nav_"))
-def navigate_results(call):
-    user_id = call.from_user.id
-    chat_id = call.message.chat.id
-    action = call.data.split("_")[1]
-    
-    if user_id not in user_data or 'search_results' not in user_data[user_id]:
-        bot.answer_callback_query(call.id, "❌ الجلسة منتهية، ابدأ بحثاً جديداً")
-        return
-    
-    # تحديث الفهرس
-    if action == 'prev':
-        user_data[user_id]['current_index'] -= 1
-    elif action == 'next':
-        user_data[user_id]['current_index'] += 1
-    
-    # حفظ معرف الرسالة للتعديل
-    user_data[user_id]['last_message_id'] = call.message.message_id
-    
-    # عرض النتيجة الجديدة
-    show_result(chat_id, user_id)
+    except requests.exceptions.RequestException:
+        bot.edit_message_text("حدث خطأ في الاتصال، يرجى المحاولة لاحقاً.", message.chat.id, processing_msg.message_id)
 
-@bot.callback_query_handler(func=lambda call: call.data == "download")
-def download_content(call):
-    user_id = call.from_user.id
-    chat_id = call.message.chat.id
-    
-    # إزالة أزرار التنقل
-    try:
-        bot.edit_message_reply_markup(
-            chat_id=chat_id,
-            message_id=call.message.message_id,
-            reply_markup=None
-        )
-    except:
-        pass
-    
-    # إظهار رسالة تأكيد
-    bot.answer_callback_query(call.id, "✅ تم التحميل بنجاح!")
-    
-    # إظهار خيارات جديدة في رسالة منفصلة
-    markup = InlineKeyboardMarkup()
-    markup.add(InlineKeyboardButton("🔍 بحث جديد", callback_data="search"))
-    markup.add(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="back_to_main"))
-    
-    bot.send_message(chat_id, "تم تحميل المحتوى بنجاح!\nماذا تريد أن تفعل الآن؟", reply_markup=markup)
+    # إعادة حالة المستخدم للوضع الافتراضي
+    if user_id in user_data:
+        user_data[user_id]['state'] = None
+        
+# دالة لعرض نتيجة الصورة
+def send_image_result(chat_id, user_id, message_id):
+    # (هنا يتم بناء الكود الخاص بعرض الصور)
+    pass
 
-@bot.callback_query_handler(func=lambda call: call.data == "about_dev")
-def show_dev_info(call):
-    dev_info = """
-👨‍💻 عن المطوّر @Ili8_8ill  
-مطوّر مبتدئ في عالم بوتات تيليجرام، بدأ رحلته بشغف كبير لتعلم البرمجة وصناعة أدوات ذكية تساعد المستخدمين وتضيف قيمة للمجتمعات الرقمية. يسعى لتطوير مهاراته يومًا بعد يوم من خلال التجربة، التعلم، والمشاركة في مشاريع بسيطة لكنها فعّالة.
+# دالة لعرض نتيجة الفيديو
+def send_video_result(chat_id, user_id, message_id):
+    # (هنا يتم بناء الكود الخاص بعرض الفيديوهات)
+    pass
 
-🔰 ما يميّزه في هذه المرحلة:  
+# --- بدء تشغيل البوت ---
 
-• حب الاستكشاف والتعلّم الذاتي  
-• بناء بوتات بسيطة بمهام محددة  
-• استخدام أدوات مثل BotFather و Python  
-• الانفتاح على النقد والتطوير المستمر
-
-📡 القنوات المرتبطة:  
-@crazys7 • @AWU87  
-
-🌱 رؤية المطوّر:  
-الانطلاق من الأساسيات نحو الاحتراف، خطوة بخطوة، مع طموح لصناعة بوتات تلبي احتياجات حقيقية وتُحدث فرقًا.
-
-📬 للتواصل: @Ili8_8ill
-    """
-    markup = InlineKeyboardMarkup()
-    markup.add(InlineKeyboardButton("🔙 رجوع", callback_data="back_to_main"))
-    
-    bot.edit_message_text(
-        chat_id=call.message.chat.id,
-        message_id=call.message.message_id,
-        text=dev_info,
-        reply_markup=markup,
-        parse_mode='Markdown'
-    )
-
-@bot.callback_query_handler(func=lambda call: call.data == "back_to_main")
-def return_to_main(call):
-    user_id = call.from_user.id
-    chat_id = call.message.chat.id
-    show_main_menu(chat_id, user_id)
-
-if __name__ == '__main__':
-    print("Bot is running...")
-    while True:
-        try:
-            bot.polling(none_stop=True)
-        except Exception as e:
-            print(f"Error occurred: {e}")
-            time.sleep(15) 
+print("Bot is running...")
+bot.polling()

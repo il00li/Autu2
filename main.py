@@ -3,7 +3,7 @@ from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 import requests
 import json
 
-TOKEN = '8373741818:AAHTndgrs7FXSQr9arQ-_-3JXIRenv9k2x8'
+TOKEN = '8373741818:AAHTDbjVJUu6tY29pUvuUb38rSLQuSgBTQA '
 PIXABAY_API_KEY = '39878241-6c3d5e7d3b1d7a2d2c6f4c1a3'  # استبدلها بمفتاحك الفعلي
 ADMIN_ID = 7251748706  # معرف المدير
 

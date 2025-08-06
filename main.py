@@ -1,271 +1,274 @@
-import telebot
-from telebot import types
+import logging
+from aiogram import Bot, Dispatcher, types, F, Router
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, CallbackQuery, InputMediaPhoto
+from aiogram.filters import Command
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
 import requests
-import json
+import datetime
+import os
+import asyncio
 
-# 🤖 إعدادات البوت الأساسية 🤖
-BOT_TOKEN = "7639996535:AAH_Ppw8jeiUg4nJjjEyOXaYlip289jSAio"
-PIXABAY_API_KEY = "51444506-bffefcaf12816bd85a20222d1" # ⚠️ لا تنسَ استبدال هذا بمفتاح API الخاص بك من Pixabay ⚠️
+# ================ إعدادات البوت ================
+TOKEN = "7639996535:AAH_Ppw8jeiUg4nJjjEyOXaYlip289jSAio"
+PIXABAY_API_KEY = "51444506-bbfefcaf12816bd85a20222d1"
+CHANNELS = ["@crazys7", "@AWU87"]
+MANAGER_ID = 7251748706
+WEBHOOK_URL = "https://autu2.onrender.com"
 
-# 👥 قنوات الاشتراك الإجباري 👥
-MANDATORY_CHANNELS = {
-    "@crazys7": "https://t.me/crazys7",
-    "@AWU87": "https://t.me/AWU87"
-}
+# ================ حالات المستخدم ================
+class UserState(StatesGroup):
+    MAIN_MENU = State()
+    SEARCH_TYPE = State()
+    SEARCHING_PHOTO = State()
+    SEARCHING_SOUND = State()
+    RESULTS_PHOTO = State()
+    RESULTS_SOUND = State()
 
-# 🚀 تهيئة البوت 🚀
-bot = telebot.TeleBot(BOT_TOKEN)
-
-# 💾 بيانات جلسات المستخدمين (للحفاظ على حالة البحث لكل مستخدم) 💾
-user_sessions = {}
-
-# 🎨 لوحة المفاتيح Inline لاختيار نوع الأيقونات 🎨
-search_type_keyboard = types.InlineKeyboardMarkup()
-search_type_keyboard.row(
-    types.InlineKeyboardButton("✨ رسوم توضيحية ✨", callback_data="type_illustration"),
-    types.InlineKeyboardButton("📐 رسوم متجهة 📐", callback_data="type_vector")
+# ================ إعداد التسجيل ================
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
 )
+logger = logging.getLogger(__name__)
 
-def check_subscription(user_id):
-    """
-    تتحقق مما إذا كان المستخدم مشتركًا في جميع القنوات الإجبارية.
-    """
-    for channel_username in MANDATORY_CHANNELS:
-        try:
-            member = bot.get_chat_member(channel_username, user_id)
-            # حالات العضوية المقبولة: 'member', 'administrator', 'creator'
+# ================ إنشاء كائنات البوت ================
+bot = Bot(token=TOKEN)
+dp = Dispatcher()
+router = Router()
+dp.include_router(router)
+
+# ================ وظائف البوت ================
+async def notify_manager(user: types.User, state: FSMContext):
+    try:
+        data = await state.get_data()
+        if not data.get('notified_manager'):
+            user_info = f"👤 مستخدم جديد انضم إلى القنوات!\n\n🆔 المعرف: {user.id}\n👤 الاسم: {user.first_name}\n📅 التاريخ: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+            if user.username: user_info += f"\n🔖 اليوزر: @{user.username}"
+            await bot.send_message(chat_id=MANAGER_ID, text=user_info)
+            await state.update_data(notified_manager=True)
+            logger.info(f"تم إرسال إشعار للمدير بشأن المستخدم: {user.id}")
+    except Exception as e:
+        logger.error(f"خطأ في إرسال إشعار للمدير: {e}")
+
+async def check_subscription(user_id: int):
+    try:
+        for channel in CHANNELS:
+            member = await bot.get_chat_member(chat_id=channel, user_id=user_id)
             if member.status not in ['member', 'administrator', 'creator']:
                 return False
-        except Exception as e:
-            # طباعة الخطأ للمطور للمساعدة في التصحيح
-            print(f"❌ خطأ أثناء التحقق من القناة {channel_username}: {e}")
-            return False
-    return True
+        return True
+    except Exception as e:
+        logger.error(f"خطأ في التحقق من الاشتراك: {e}")
+        return False
 
-def subscription_keyboard():
-    """
-    تنشئ لوحة مفاتيح Inline تحتوي على روابط للقنوات الإجبارية وزر للتحقق من الاشتراك.
-    """
-    keyboard = types.InlineKeyboardMarkup()
-    for channel_name, channel_link in MANDATORY_CHANNELS.items():
-        keyboard.add(types.InlineKeyboardButton(text=f"🔗 اشترك في {channel_name}", url=channel_link))
-    keyboard.add(types.InlineKeyboardButton(text="✅ تحقق من الاشتراك ✅", callback_data="check_sub"))
-    return keyboard
+# ================ لوحات المفاتيح ================
+def get_main_menu_keyboard():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="انقر للبحث 🎧", callback_data='start_search_type')],
+    ])
 
-def pixabay_search(query, image_type, page=1):
-    """
-    تُجري بحثًا عن الصور في Pixabay API.
-    """
-    url = "https://pixabay.com/api/"
-    params = {
-        'key': PIXABAY_API_KEY,
-        'q': query,
-        'image_type': image_type,
-        'page': page,
-        'per_page': 20 # عدد النتائج في كل صفحة
-    }
+def get_search_type_keyboard():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="صور 🖼️", callback_data='search_photo')],
+        [InlineKeyboardButton(text="أصوات 🎶", callback_data='search_sound')],
+        [InlineKeyboardButton(text="رجوع ↩️", callback_data='back_to_menu')]
+    ])
+
+def get_navigation_keyboard(index, total_results, result_type):
+    keyboard_buttons = []
+    if index > 0:
+        keyboard_buttons.append(InlineKeyboardButton(text="« السابق", callback_data=f'prev_{result_type}'))
+    if index < total_results - 1:
+        keyboard_buttons.append(InlineKeyboardButton(text="التالي »", callback_data=f'next_{result_type}'))
+    
+    return InlineKeyboardMarkup(inline_keyboard=[keyboard_buttons]) if keyboard_buttons else None
+
+# ================ معالجات الأوامر الرئيسية ================
+@router.message(Command("start"))
+async def start(message: types.Message, state: FSMContext):
+    user_id = message.from_user.id
+    if await check_subscription(user_id):
+        await notify_manager(message.from_user, state)
+        await show_main_menu(message, state)
+    else:
+        await show_channels(message)
+
+async def show_main_menu(message: types.Message, state: FSMContext):
+    await message.answer("🌟 قائمة البحث الرئيسية 🌟", reply_markup=get_main_menu_keyboard())
+    await state.set_state(UserState.MAIN_MENU)
+
+async def show_channels(message: types.Message):
+    buttons = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="قناة 1", url="https://t.me/crazys7"),
+         InlineKeyboardButton(text="قناة 2", url="https://t.me/AWU87")],
+        [InlineKeyboardButton(text="تحقق | Check", callback_data='check_subscription')]
+    ])
+    await message.answer("❗️ يجب الاشتراك في القنوات التالية أولاً:", reply_markup=buttons)
+
+@router.callback_query(F.data == 'check_subscription')
+async def check_subscription_callback(callback: CallbackQuery, state: FSMContext):
+    if await check_subscription(callback.from_user.id):
+        await notify_manager(callback.from_user, state)
+        await callback.answer("تم التحقق بنجاح! ✅")
+        await show_main_menu(callback.message, state)
+    else:
+        await callback.answer("لم تكتمل الاشتراكات بعد! ❌", show_alert=True)
+    # ================ معالجات البحث والتنقل ================
+@router.callback_query(F.data == 'start_search_type', UserState.MAIN_MENU)
+async def choose_search_type(callback: CallbackQuery, state: FSMContext):
+    await callback.message.edit_text("🔎 اختر نوع البحث:", reply_markup=get_search_type_keyboard())
+    await state.set_state(UserState.SEARCH_TYPE)
+
+@router.callback_query(F.data == 'search_photo', UserState.SEARCH_TYPE)
+async def start_search_photo(callback: CallbackQuery, state: FSMContext):
+    await callback.message.edit_text("🖼️ أرسل كلمة البحث للصور الآن:")
+    await state.set_state(UserState.SEARCHING_PHOTO)
+
+@router.callback_query(F.data == 'search_sound', UserState.SEARCH_TYPE)
+async def start_search_sound(callback: CallbackQuery, state: FSMContext):
+    await callback.message.edit_text("🎶 أرسل كلمة البحث للمؤثرات الصوتية الآن:")
+    await state.set_state(UserState.SEARCHING_SOUND)
+
+@router.message(UserState.SEARCHING_PHOTO)
+async def perform_photo_search(message: types.Message, state: FSMContext):
+    search_query = message.text
+    await bot.send_chat_action(message.chat.id, "upload_photo")
+    url = f"https://pixabay.com/api/?key={PIXABAY_API_KEY}&q={search_query}&image_type=photo&per_page=40"
+    
     try:
-        response = requests.get(url, params=params)
-        response.raise_for_status() # ترفع استثناء لأكواد الحالة السيئة (مثل 4xx أو 5xx)
-        return response.json()
-    except requests.exceptions.RequestException as e:
-        print(f"❌ خطأ أثناء البحث في Pixabay: {e}")
-        return None
-
-def create_navigation_keyboard(current_index, total_results):
-    """
-    تنشئ لوحة مفاتيح Inline للتنقل بين نتائج البحث (السابق/التالي).
-    """
-    keyboard = types.InlineKeyboardMarkup()
-    buttons = []
-    
-    # زر 'السابق' يظهر إذا لم تكن النتيجة الأولى
-    if current_index > 0:
-        buttons.append(types.InlineKeyboardButton(text="◀️ السابق", callback_data="nav_prev"))
-
-    # زر 'التالي' يظهر إذا لم تكن النتيجة الأخيرة في الصفحة الحالية
-    if current_index < total_results - 1:
-        buttons.append(types.InlineKeyboardButton(text="التالي ▶️", callback_data="nav_next"))
-
-    # إضافة الأزرار إلى صف واحد
-    keyboard.row(*buttons)
-    return keyboard
-
-@bot.message_handler(commands=['start'])
-def send_welcome_and_ask_query(message):
-    """
-    تتعامل مع الأمر /start وتطالب المستخدم بكلمة بحث.
-    """
-    user_id = message.from_user.id
-    chat_id = message.chat.id
-
-    # التحقق من الاشتراك أولاً
-    if not check_subscription(user_id):
-        bot.send_message(
-            chat_id,
-            "👋 أهلاً بك! لاستخدام بوت الأيقونات، يرجى الاشتراك في قنواتنا أولاً:",
-            reply_markup=subscription_keyboard()
-        )
-        return
-    
-    # تهيئة نوع البحث الافتراضي إذا كانت الجلسة جديدة
-    if user_id not in user_sessions:
-        user_sessions[user_id] = {'image_type': 'illustration'} # الافتراضي: رسوم توضيحية
-    
-    # إرسال رسالة الترحيب وطلب كلمة البحث مع خيارات نوع البحث
-    msg = bot.send_message(
-        chat_id,
-        "✨ أهلاً بك في بوت أيقونات Pixabay! ✨\n\n"
-        "أرسل لي كلمة مفتاحية للبحث عن الأيقونات.\n"
-        "يمكنك أيضًا اختيار نوع الأيقونات من الأزرار أدناه:",
-        reply_markup=search_type_keyboard
-    )
-    # تسجيل معالج الخطوة التالية لمعالجة كلمة البحث التي سيرسلها المستخدم
-    bot.register_next_step_handler(msg, process_search_query)
-
-def process_search_query(message):
-    """
-    تُعالج كلمة البحث التي أرسلها المستخدم وتبدأ عملية البحث.
-    """
-    chat_id = message.chat.id
-    query = message.text
-    user_id = message.from_user.id
-    
-    # التحقق من الاشتراك مرة أخرى في حال غادر المستخدم القناة بعد /start
-    if not check_subscription(user_id):
-        bot.send_message(
-            chat_id,
-            "🚫 عذرًا، يجب عليك الاشتراك أولاً لاستخدام البوت. 🚫",
-            reply_markup=subscription_keyboard()
-        )
-        return
-
-    # الحصول على نوع البحث من جلسة المستخدم، أو استخدام 'illustration' كافتراضي
-    image_type = user_sessions.get(user_id, {}).get('image_type', 'illustration')
-
-    # إجراء البحث في Pixabay
-    search_results = pixabay_search(query, image_type, page=1)
-
-    # التحقق مما إذا كانت هناك نتائج
-    if not search_results or not search_results.get('hits'): # استخدام .get('hits') لتجنب KeyError
-        bot.reply_to(message, "😔 عذرًا، لم يتم العثور على أي أيقونات لهذه الكلمة. حاول بكلمة أخرى! 😔\n"
-                               "للبدء من جديد، أرسل /start")
-        return
-
-    # تخزين بيانات الجلسة للمستخدم
-    user_sessions[chat_id] = {
-        'query': query,
-        'image_type': image_type,
-        'results': search_results['hits'], # تخزين النتائج الفعلية المستلمة
-        'current_index': 0,
-        'total_results': len(search_results['hits']),
-        'page': 1
-    }
-
-    # إرسال أول أيقونة من النتائج
-    first_image = user_sessions[chat_id]['results'][0]
-    keyboard = create_navigation_keyboard(0, user_sessions[chat_id]['total_results'])
-
-    bot.send_photo(
-        chat_id,
-        first_image['largeImageURL'],
-        caption=f"🖼️ أيقونة ({image_type.capitalize()}) - النتيجة 1 من {user_sessions[chat_id]['total_results']} 🖼️",
-        reply_markup=keyboard
-    )
-    
-@bot.callback_query_handler(func=lambda call: call.data.startswith('type_'))
-def handle_type_selection(call):
-    """
-    تتعامل مع ضغط أزرار Inline لاختيار نوع البحث (رسوم توضيحية/متجهة).
-    """
-    user_id = call.from_user.id
-    chat_id = call.message.chat.id
-    selected_type = call.data.split('_')[1] # استخراج نوع البحث من callback_data
-    
-    # تحديث نوع البحث في جلسة المستخدم
-    if chat_id not in user_sessions:
-        user_sessions[chat_id] = {'image_type': selected_type}
-    else:
-        user_sessions[chat_id]['image_type'] = selected_type
-    
-    # تعديل الرسالة الأصلية لإظهار النوع المختار
-    bot.edit_message_text(
-        chat_id=chat_id,
-        message_id=call.message.message_id,
-        text=f"✅ تم تحديد نوع الأيقونات: {selected_type.capitalize()} ✅\n"
-             f"الآن، أرسل كلمة مفتاحية جديدة للبحث عن أيقونات بهذا النوع.",
-        reply_markup=None # إزالة لوحة المفاتيح بعد الاختيار
-    )
-    bot.answer_callback_query(call.id, text=f"تم تحديد نوع البحث إلى {selected_type.capitalize()}")
-    
-    # تسجيل معالج الخطوة التالية مرة أخرى لاستقبال كلمة البحث الجديدة بعد اختيار النوع
-    bot.register_next_step_handler(call.message, process_search_query)
-
-@bot.callback_query_handler(func=lambda call: call.data.startswith('nav_'))
-def handle_navigation(call):
-    """
-    تتعامل مع ضغط أزرار Inline للتنقل بين نتائج البحث (السابق/التالي).
-    """
-    chat_id = call.message.chat.id
-    
-    # التحقق من وجود جلسة للمستخدم
-    if chat_id not in user_sessions:
-        bot.send_message(chat_id, "⚠️ عذرًا، انتهت صلاحية الجلسة. يرجى البدء ببحث جديد عبر /start ⚠️")
-        bot.answer_callback_query(call.id, "انتهت الجلسة.")
-        return
+        response = requests.get(url)
+        response.raise_for_status()
+        results = response.json().get('hits', [])
         
-    session = user_sessions[chat_id]
-    current_index = session['current_index']
-    
-    # تحديث المؤشر بناءً على الزر المضغوط
-    if call.data == "nav_next":
-        current_index += 1
-    elif call.data == "nav_prev":
-        current_index -= 1
+        if results:
+            await state.update_data(results=results, current_index=0, current_query=search_query)
+            await show_photo_result(message, state)
+            await state.set_state(UserState.RESULTS_PHOTO)
+            return
         
-    # التحقق من أن المؤشر ضمن حدود النتائج المتاحة في الجلسة الحالية
-    if 0 <= current_index < session['total_results']:
-        session['current_index'] = current_index # تحديث المؤشر في الجلسة
-        new_image = session['results'][current_index] # الحصول على الأيقونة الجديدة
-        keyboard = create_navigation_keyboard(current_index, session['total_results']) # إنشاء لوحة مفاتيح جديدة
+        await message.answer("⚠️ لم يتم العثور على نتائج. حاول بكلمات أخرى.")
+        await show_main_menu(message, state)
+    except Exception as e:
+        logger.error(f"خطأ في البحث عن الصور: {e}")
+        await message.answer("❌ حدث خطأ في البحث. يرجى المحاولة لاحقًا.")
+        await show_main_menu(message, state)
 
-        try:
-            # إنشاء كائن InputMediaPhoto مع الصورة الجديدة والوصف المحدث
-            new_media = types.InputMediaPhoto(
-                media=new_image['largeImageURL'],
-                caption=f"🖼️ أيقونة ({session['image_type'].capitalize()}) - النتيجة {current_index + 1} من {session['total_results']} 🖼️"
-            )
+@router.message(UserState.SEARCHING_SOUND)
+async def perform_sound_search(message: types.Message, state: FSMContext):
+    search_query = message.text
+    await bot.send_chat_action(message.chat.id, "upload_photo")
+    url = f"https://pixabay.com/api/videos/?key={PIXABAY_API_KEY}&q={search_query}&video_type=all&per_page=40"
+
+    try:
+        response = requests.get(url)
+        response.raise_for_status()
+        results = response.json().get('hits', [])
+        
+        if results:
+            await state.update_data(results=results, current_index=0, current_query=search_query)
+            await show_sound_result(message, state)
+            await state.set_state(UserState.RESULTS_SOUND)
+            return
             
-            # تعديل الرسالة الحالية (الصورة والوصف ولوحة المفاتيح)
-            bot.edit_message_media(
-                media=new_media,
-                chat_id=chat_id,
-                message_id=call.message.message_id,
-                reply_markup=keyboard
-            )
-            bot.answer_callback_query(call.id, text="تم التنقل بنجاح! ✨")
-        except telebot.apihelper.ApiTelegramException as e:
-            # التعامل مع خطأ "الرسالة لم تتغير" لتجنب الأخطاء غير الضرورية
-            if "message is not modified" in str(e):
-                bot.answer_callback_query(call.id, "هذه هي الأيقونة الحالية بالفعل! 😅")
-            else:
-                print(f"❌ خطأ أثناء تعديل الرسالة: {e}")
-                bot.answer_callback_query(call.id, "حدث خطأ أثناء التنقل. 😔")
-    else:
-        bot.answer_callback_query(call.id, "لا توجد أيقونات أخرى في هذه الصفحة! 🚫")
+        await message.answer("⚠️ لم يتم العثور على نتائج. حاول بكلمات أخرى.")
+        await show_main_menu(message, state)
+    except Exception as e:
+        logger.error(f"خطأ في البحث عن الأصوات: {e}")
+        await message.answer("❌ حدث خطأ في البحث. يرجى المحاولة لاحقًا.")
+        await show_main_menu(message, state)
 
-@bot.callback_query_handler(func=lambda call: call.data == 'check_sub')
-def check_sub_handler(call):
-    """
-    تتعامل مع زر 'تحقق من الاشتراك'.
-    """
-    if check_subscription(call.from_user.id):
-        bot.delete_message(call.message.chat.id, call.message.message_id) # حذف رسالة التحقق
-        send_welcome_and_ask_query(call.message) # إعادة توجيه المستخدم لرسالة الترحيب
-    else:
-        bot.answer_callback_query(call.id, "❌ لم يتم الاشتراك في جميع القنوات بعد! 😔")
+# ================ دوال عرض النتائج ================
+async def show_photo_result(message: types.Message, state: FSMContext, callback_query=None):
+    data = await state.get_data()
+    index = data['current_index']
+    results = data['results']
+    result = results[index]
 
-# 🚀 بدء تشغيل البوت 🚀
-print("🎉 البوت يعمل الآن... ابدأ المحادثة في تيليجرام! 🎉")
-bot.polling()
- 
+    keyboard = get_navigation_keyboard(index, len(results), 'photo')
+    caption = f"📸 المصور: {result['user']}\n\nصورة {index + 1} من {len(results)}"
+    
+    media = InputMediaPhoto(media=result['largeImageURL'], caption=caption)
+
+    if callback_query:
+        await callback_query.message.edit_media(media=media, reply_markup=keyboard)
+    else:
+        await message.answer_photo(photo=result['largeImageURL'], caption=caption, reply_markup=keyboard)
+
+async def show_sound_result(message: types.Message, state: FSMContext, callback_query=None):
+    data = await state.get_data()
+    index = data['current_index']
+    results = data['results']
+    result = results[index]
+
+    keyboard = get_navigation_keyboard(index, len(results), 'sound')
+    
+    sound_url = result['videos']['tiny']['url'] 
+    caption = f"🎶 مؤثر صوتي من: {result['user']}\n\nصوت {index + 1} من {len(results)}"
+
+    if callback_query:
+        await callback_query.message.delete()
+        await bot.send_audio(chat_id=callback_query.message.chat.id, audio=sound_url, caption=caption, reply_markup=keyboard)
+    else:
+        await message.answer_audio(audio=sound_url, caption=caption, reply_markup=keyboard)
+
+@router.callback_query(F.data.in_(['prev_photo', 'next_photo']), UserState.RESULTS_PHOTO)
+async def navigate_photo_results(callback: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    current_index = data['current_index']
+    new_index = current_index + 1 if 'next' in callback.data else current_index - 1
+    await state.update_data(current_index=new_index)
+    await show_photo_result(callback.message, state, callback_query=callback)
+
+@router.callback_query(F.data.in_(['prev_sound', 'next_sound']), UserState.RESULTS_SOUND)
+async def navigate_sound_results(callback: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    current_index = data['current_index']
+    new_index = current_index + 1 if 'next' in callback.data else current_index - 1
+    await state.update_data(current_index=new_index)
+    await show_sound_result(callback.message, state, callback_query=callback)
+
+@router.callback_query(F.data == 'back_to_menu')
+async def back_to_menu(callback: CallbackQuery, state: FSMContext):
+    await callback.message.delete()
+    await show_main_menu(callback.message, state)
+
+# ================ إعدادات التشغيل ================
+async def on_startup():
+    await bot.set_webhook(WEBHOOK_URL)
+    logging.info("تم تشغيل البوت بنجاح!")
+
+async def on_shutdown():
+    await bot.delete_webhook()
+    logging.info("إيقاف البوت...")
+
+# ================ التشغيل الرئيسي ================
+async def main():
+    await dp.start_polling(bot)
+
+if __name__ == '__main__':
+    port = int(os.environ.get('PORT', 8443))
+
+    if "RENDER" in os.environ:
+        from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
+        from aiohttp import web
+
+        app = web.Application()
+        webhook_requests_handler = SimpleRequestHandler(
+            dispatcher=dp,
+            bot=bot,
+        )
+
+        webhook_requests_handler.register(app, path="/")
+        setup_application(app, dp, bot=bot)
+
+        async def on_startup_web(app):
+            await bot.set_webhook(WEBHOOK_URL)
+            logging.info("تم تشغيل البوت بنجاح على Render!")
+
+        app.on_startup.append(on_startup_web)
+
+        web.run_app(app, host='0.0.0.0', port=port)
+    else:
+        asyncio.run(main())
+        

@@ -6,7 +6,7 @@ import json
 # Iconify API
 ICONIFY_API_URL = 'https://api.iconify.design/search'
 
-bot = telebot.TeleBot('7968375518:AAGGfLq9elxG9GGzNiu_q_VJvPbz07Zx1Qc')  # استبدل بـ توكن بوتك
+bot = telebot.TeleBot('7968375518:AAHhFQcaIvAS48SRnVUxQ7fd_bltB9MTIBc ')  # استبدل بـ توكن بوتك
 
 # تخزين مؤقت لنتائج البحث
 user_data = {}

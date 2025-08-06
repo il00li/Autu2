@@ -4,7 +4,7 @@ import json
 import time
 
 # تعريف توكن البوت ومفتاح Pixabay API
-BOT_TOKEN = "8373741818:AAHTDbjVJUu6tY29pUvuUb38rSLQuSgBTQA "
+BOT_TOKEN = "8373741818:AAHTDbjVJUu6tY29pUvuUb38rSLQuSgBTQA"
 PIXABAY_API_KEY = "51444506-bffefcaf12816bd85a20222d1"
 
 # معرفات القنوات الإلزامية ومعرف المدير

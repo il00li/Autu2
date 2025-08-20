@@ -13,9 +13,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-TOKEN = '7742801098:AAFD3jwXm61XVBr_IkKxgoVDUlJAO35CERU'
+TOKEN = '7863334400:AAG2Ksjprp1niyEx3dhDJo9n5KgwH11nWSU'
 PIXABAY_API_KEY = '51444506-bffefcaf12816bd85a20222d1'
-ADMIN_ID = 7251748706  # معرف المدير
+ADMIN_ID = 6689435577 # معرف المدير
 WEBHOOK_URL = 'https://autu2.onrender.com/webhook'  # تأكد من تطابق هذا مع عنوان URL الخاص بك
 
 app = Flask(__name__)

@@ -16,7 +16,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-TOKEN = '8324471840:AAFqTHWy4-FZFIHGusm5RWk1Y240cV32SCw'
+TOKEN = '8052936091:AAHBOvi3SjMlTcWHAT2DQqBqcFALJ8Ueh8c'
 PIXABAY_API_KEY = '51444506-bffefcaf12816bd85a20222d1'
 ADMIN_ID = 6689435577  # معرف المدير
 WEBHOOK_URL = 'https://autu2.onrender.com/webhook'  # تأكد من تطابق هذا مع عنوان URL الخاص بك

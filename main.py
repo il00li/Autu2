@@ -15,7 +15,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-TOKEN = '8324471840:AAFqTHWy4-FZFIHGusm5RWk1Y240cV32SCw'
+TOKEN = '8052936091:AAG0D2P3H_RQbAmyYrtQOsUf8aUv_LWKchQ'
 UNSPLASH_API_KEY = 'Nrc3mmoxm3BaQes6ZAhIgqtNq2GvZwp3-21pTwByORk'
 PIXABAY_API_KEY = '51444506-bffefcaf12816bd85a20222d1'  # للفيديوهات فقط
 ADMIN_ID = 6689435577  # معرف المدير
@@ -398,13 +398,13 @@ def show_content_types(call):
     if user_id not in premium_users:
         markup = InlineKeyboardMarkup()
         markup.add(InlineKeyboardButton("👑 ترقية إلى المميز", callback_data="upgrade_premium"))
-        markup.add(InlineKeyboardButton("🔙 رجوع", callback_data="back_to_main"))
+        markup.add(InlineKeyboardButton("🍈 رجوع", callback_data="back_to_main"))
         
         try:
             bot.edit_message_text(
                 chat_id=chat_id,
                 message_id=call.message.message_id,
-                text="⛔️ هذه الميزة متاحة فقط للأعضاء المميزين",
+                text="(ง'‌-'‌)ง هذه الميزة متاحة فقط للأعضاء المميزين",
                 reply_markup=markup
             )
         except Exception as e:
@@ -423,14 +423,14 @@ def show_content_types(call):
     
     markup = InlineKeyboardMarkup(row_width=2)
     markup.add(
-        InlineKeyboardButton("📷 Photos", callback_data="type_photo"),
-        InlineKeyboardButton("🎨 Illustrations", callback_data="type_illustration")
+        InlineKeyboardButton(" Photos | صور", callback_data="type_photo"),
+        InlineKeyboardButton(" Illustration | رسوم", callback_data="type_illustration")
     )
     markup.add(
-        InlineKeyboardButton("🖼️ 3D Illustrations", callback_data="type_3d"),
-        InlineKeyboardButton("🎥 Videos", callback_data="type_video")
+        InlineKeyboardButton("3D Illustration | 3D رسوم", callback_data="type_3d"),
+        InlineKeyboardButton("Videos | فيديو ", callback_data="type_video")
     )
-    markup.add(InlineKeyboardButton("🌐 All", callback_data="type_all"))
+    markup.add(InlineKeyboardButton(" All | عشوائي", callback_data="type_all"))
     markup.add(InlineKeyboardButton("🔙 رجوع", callback_data="back_to_main"))
     
     try:
@@ -504,7 +504,7 @@ def process_search_term(message, user_id):
         bot.edit_message_text(
             chat_id=chat_id,
             message_id=user_data[user_id]['search_message_id'],
-            text="⏳ جاري البحث في قاعدة البيانات...",
+            text="🪴 جاري البحث في قاعدة البيانات...",
             reply_markup=None
         )
     except Exception as e:
@@ -521,8 +521,8 @@ def process_search_term(message, user_id):
     if not results or len(results) == 0:
         # عرض خيارات عند عدم وجود نتائج
         markup = InlineKeyboardMarkup()
-        markup.add(InlineKeyboardButton("🔍 بحث جديد", callback_data="search"))
-        markup.add(InlineKeyboardButton("🏠 الرئيسية", callback_data="back_to_main"))
+        markup.add(InlineKeyboardButton("🫐 بحث جديد", callback_data="search"))
+        markup.add(InlineKeyboardButton("🏖️ الرئيسية", callback_data="back_to_main"))
         
         try:
             bot.edit_message_text(
@@ -639,12 +639,12 @@ def show_result(chat_id, user_id, message_id=None):
     nav_buttons = []
     
     if current_index > 0:
-        nav_buttons.append(InlineKeyboardButton("◀️ السابق", callback_data=f"nav_prev"))
+        nav_buttons.append(InlineKeyboardButton("🌳 السابق", callback_data=f"nav_prev"))
     
-    nav_buttons.append(InlineKeyboardButton("💾 تحميل", callback_data="download"))
+    nav_buttons.append(InlineKeyboardButton("🍏 تحميل", callback_data="download"))
     
     if current_index < len(results) - 1:
-        nav_buttons.append(InlineKeyboardButton("▶️ التالي", callback_data=f"nav_next"))
+        nav_buttons.append(InlineKeyboardButton("🌳 التالي", callback_data=f"nav_next"))
     
     markup.row(*nav_buttons)
     markup.row(InlineKeyboardButton("🔍 جديد", callback_data="search"))
@@ -800,14 +800,14 @@ def download_content(call):
         logger.error(f"خطأ في ازالة الازرار: {e}")
     
     # إظهار رسالة تأكيد
-    bot.answer_callback_query(call.id, "تم التحميل بنجاح! ✅", show_alert=False)
+    bot.answer_callback_query(call.id, "تم التحميل بنجاح! 🌲", show_alert=False)
     
     # إظهار خيارات جديدة في رسالة منفصلة
     markup = InlineKeyboardMarkup()
-    markup.add(InlineKeyboardButton("🔍 بحث جديد", callback_data="search"))
-    markup.add(InlineKeyboardButton("🏠 الرئيسية", callback_data="back_to_main"))
+    markup.add(InlineKeyboardButton("🍇 بحث جديد", callback_data="search"))
+    markup.add(InlineKeyboardButton("عودة 🌹", callback_data="back_to_main"))
     
-    bot.send_message(chat_id, "✅ تم تحميل المحتوى بنجاح!\nماذا تريد أن تفعل الآن؟", reply_markup=markup)
+    bot.send_message(chat_id, " 🍓 تم تحميل المحتوى بنجاح!\nماذا تريد أن تفعل الآن؟", reply_markup=markup)
 
 @bot.callback_query_handler(func=lambda call: call.data == "settings")
 def show_settings(call):
@@ -815,7 +815,7 @@ def show_settings(call):
     chat_id = call.message.chat.id
     
     markup = InlineKeyboardMarkup()
-    markup.add(InlineKeyboardButton("👤 عن المطور", callback_data="about_dev"))
+    markup.add(InlineKeyboardButton("🍈 عن المطور", callback_data="about_dev"))
     markup.add(InlineKeyboardButton("👑 ترقية إلى المميز", callback_data="upgrade_premium"))
     markup.add(InlineKeyboardButton("🔙 رجوع", callback_data="back_to_main"))
     
@@ -835,13 +835,13 @@ def upgrade_premium(call):
     chat_id = call.message.chat.id
     
     markup = InlineKeyboardMarkup()
-    markup.add(InlineKeyboardButton("🔙 رجوع", callback_data="settings"))
+    markup.add(InlineKeyboardButton("🌴 رجوع", callback_data="settings"))
     
     try:
         bot.edit_message_text(
             chat_id=chat_id,
             message_id=call.message.message_id,
-            text="👑 لترقية حسابك إلى العضوية المميزة، يرجى التواصل مع المدير @Ili8_8ill",
+            text="👑 لترقية حسابك إلى العضوية المميزة، يرجى التواصل مع المدير @OlIiIl7",
             reply_markup=markup
         )
     except Exception as e:
@@ -850,14 +850,14 @@ def upgrade_premium(call):
 @bot.callback_query_handler(func=lambda call: call.data == "about_dev")
 def show_dev_info(call):
     dev_info = """
-👤 عن المطور @Ili8_8ill
+👤 عن المطور @OlIiIl7
 مطور مبتدئ في عالم بوتات تيليجرام، بدأ رحلته بشغف كبير لتعلم البرمجة وصناعة أدوات ذكية تساعد المستخدمين وتضيف قيمة للمجتمعات الرقمية. يسعى لتطوير مهاراته يومًا بعد يوم من خلال التجربة، التعلم، والمشاركة في مشاريع بسيطة لكنها فعالة.
 
 📢 القنوات المرتبطة:
 @iIl337 - @GRABOT7
 
 📞 للتواصل:
-تابع الحساب @Ili8_8ill
+تابع الحساب @OlIiIl7
     """
     
     markup = InlineKeyboardMarkup()

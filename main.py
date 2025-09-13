@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 # التوكنات والمفاتيح
-BOT_TOKEN = "8403108424:AAEH87G0dODsndjpZGFvCsn6EeOdkLlr3JE"
+BOT_TOKEN = "8403108424:AAGTGpE8tHiEXid6Hr11hjNzu-PdaZx8H9w"
 GEMINI_API_KEY = "AIzaSyDTb_B7Pq3KSWWMTC1KjG4iPGqFFgLpRl8"
 CHANNEL_ID = -1003091756917
 ADMIN_ID = 6689435577

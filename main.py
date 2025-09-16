@@ -327,23 +327,6 @@ def optimize_installation(libraries):
     
     return True, "", ""
 
-# تنظيف محتوى الملف من الرموز التي قد تسبب مشاكل
-def sanitize_file_content(content):
-    """
-    تنظيف محتوى الملف من الرموز التي قد تسبب مشاكل
-    مع الاحتفاظ بالنقطتين (:)
-    """
-    # قائمة الرموز التي تحتاج إلى تهريب (Escape)
-    chars_to_escape = ['_', '*', '[', ']', '(', ')', '~', '`', '>', 
-                      '#', '+', '-', '=', '|', '{', '}', '.', '!']
-    
-    for char in chars_to_escape:
-        content = content.replace(char, f'\\{char}')
-    
-    # التأكد من أن النقطتين (:) لا يتم تهريبهما
-    content = content.replace('\\:', ':')
-    
-    return content
 
 # تشغيل ملف بايثون مع المكتبات المثبتة
 def run_python_file_with_libraries(file_path, user_id):

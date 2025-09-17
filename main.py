@@ -359,7 +359,7 @@ def run_python_file_with_libraries(file_path, user_id):
         
         # انتظار التنفيذ لمدة أقصاها 60 ثانية
         try:
-            stdout, stderr = process.communicate(timeout=60)
+            stdout, stderr = process.communicate(timeout=86400)
         except subprocess.TimeoutExpired:
             process.kill()
             stdout, stderr = process.communicate()
